@@ -1,0 +1,11 @@
+{
+  "name": "malidesk-production",
+  "private": true,
+  "version": "2.0.0",
+  "scripts": {
+    "build": "npm --prefix frontend run build",
+    "start": "npm --prefix server start",
+    "dev": "concurrently \"npm --prefix server run dev\" \"npm --prefix frontend run dev\""
+  },
+  "devDependencies": { "concurrently": "^9.1.2" }
+}

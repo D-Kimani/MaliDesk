@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: malidesk-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: malidesk
+      POSTGRES_USER: malidesk
+      POSTGRES_PASSWORD: malidesk_local_change_me
+    ports:
+      - "5432:5432"
+    volumes:
+      - malidesk_postgres:/var/lib/postgresql/data
+
+volumes:
+  malidesk_postgres:

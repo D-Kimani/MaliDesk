@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: malidesk
+      POSTGRES_USER: malidesk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - malidesk_pg:/var/lib/postgresql/data
+    networks: [internal]
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: ../server/.env
+    depends_on: [postgres]
+    networks: [internal]
+    expose: ["3001"]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ../frontend/dist:/var/www/malidesk/frontend/dist:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certbot:/etc/letsencrypt:ro
+    depends_on: [api]
+    networks: [internal]
+
+volumes:
+  malidesk_pg:
+
+networks:
+  internal:

@@ -1,0 +1,17 @@
+import 'dotenv/config';
+import pg from 'pg';
+import bcrypt from 'bcryptjs';
+import readline from 'node:readline/promises';
+const {Pool}=pg;
+const rl=readline.createInterface({input:process.stdin,output:process.stdout});
+const fullName=await rl.question('Administrator full name: ');
+const username=await rl.question('Administrator username: ');
+const email=await rl.question('Administrator email (optional): ');
+const password=await rl.question('Administrator password (min 8, upper/lower/number): ');
+rl.close();
+if(password.length<8 || !/[a-z]/.test(password)||!/[A-Z]/.test(password)||!/[0-9]/.test(password)) throw new Error('Password does not meet policy');
+const pool=new Pool({connectionString:process.env.DATABASE_URL});
+const hash=await bcrypt.hash(password,12);
+await pool.query('INSERT INTO app_users(full_name,username,email,password_hash,role,status) VALUES($1,$2,$3,$4,\'Administrator\',\'active\')',[fullName.trim(),username.trim(),email.trim()||null,hash]);
+console.log('Administrator created. Remove/disable this bootstrap path after use.');
+await pool.end();
