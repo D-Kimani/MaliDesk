@@ -39,3 +39,19 @@ Use HTTPS and serve the frontend and API from the same origin through a reverse 
 - a managed PostgreSQL connection with TLS
 
 Do not commit `.env` or database credentials.
+
+
+## Render: separate frontend + API
+If the frontend is deployed at `https://malidesk-frontend.onrender.com` and the API at `https://malidesk.onrender.com`, configure these environment variables:
+
+**Frontend service**
+- `VITE_API_BASE_URL=https://malidesk.onrender.com`
+
+**API service**
+- `NODE_ENV=production`
+- `COOKIE_SECURE=true`
+- `CORS_ORIGIN=https://malidesk-frontend.onrender.com`
+- `DATABASE_URL=<your Render PostgreSQL external/internal connection string>`
+- `SESSION_SECRET=<long random secret>`
+
+After changing frontend environment variables, rebuild/redeploy the frontend because Vite injects `VITE_*` variables at build time. The API health check is `/api/health`.

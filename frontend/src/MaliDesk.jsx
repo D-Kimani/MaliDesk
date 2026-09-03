@@ -48,7 +48,7 @@ const uid = (p) => {
 const DATA_KEY = "malidesk-data-v3";
 const LEGACY_DATA_KEY = "malidesk-data-v1";
 const DATA_VERSION = 3;
-const AUTH_API_BASE = (import.meta?.env?.VITE_API_BASE_URL || "").replace(/\/$/, "");
+const AUTH_API_BASE = (import.meta?.env?.VITE_API_BASE_URL || (import.meta?.env?.PROD ? "https://malidesk.onrender.com" : "")).replace(/\/$/, "");
 // SECURITY NOTE: the existing local data layer is intentionally preserved for offline compatibility.
 // Production deployments must route sensitive mutations through the authenticated API layer.
 
@@ -1123,10 +1123,23 @@ function MaliDeskCore({ auth }) {
     if (wb.SheetNames.length === 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{ Note: "Nothing selected" }]), "Empty");
     return wb;
   }
-  function exportExcel(include) {
-    const wb = buildWorkbook(include);
-    XLSX.writeFile(wb, `malidesk-export-${todayISO()}.xlsx`);
-    showToast("Excel export downloaded");
+  async function exportExcel() {
+    try {
+      const response = await fetch("/rental-income-template.xlsx");
+      if (!response.ok) throw new Error("Template download failed");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Rental_Income_Clean-${todayISO()}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast("Rental Income Excel template downloaded");
+    } catch (e) {
+      showToast("Could not download the Rental Income Excel template");
+    }
   }
   function exportCSV(include) {
     const wb = buildWorkbook(include);
@@ -2269,7 +2282,7 @@ function ImportExport({ data, onImport, onExportExcel, onExportCSV, showColumns 
             <div className="text-xs" style={{ color: MUTED }}>{selectedCount} record{selectedCount === 1 ? "" : "s"} selected</div>
             <div className="flex gap-2 flex-wrap">
               <Btn icon={FileDown} onClick={() => onExportCSV(include)}>Download CSV</Btn>
-              <Btn variant="secondary" icon={FileSpreadsheet} onClick={() => onExportExcel(include)}>Download Excel</Btn>
+              <Btn variant="secondary" icon={FileSpreadsheet} onClick={onExportExcel}>Download Excel</Btn>
             </div>
           </div>
         </div>

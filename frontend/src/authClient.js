@@ -1,4 +1,4 @@
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? "https://malidesk.onrender.com" : "")).replace(/\/$/, "");
 
 export async function api(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {

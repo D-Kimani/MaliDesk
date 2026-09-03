@@ -24,9 +24,29 @@ app.set('trust proxy', 1);
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
+
+// Allow the separately deployed frontend to call the API with session cookies.
+// Keep the origin explicit; wildcard origins are incompatible with credentialed requests.
+const allowedOrigins = String(process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map(v => v.trim())
+  .filter(Boolean);
+app.use((req, res, next) => {
+  const origin = req.get('origin');
+  if (origin && (allowedOrigins.length === 0 || allowedOrigins.includes(origin))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 100, standardHeaders: true, legacyHeaders: false }));
 
-app.get('/api/health', async (req,res) => { try { await pool.query('SELECT 1'); res.json({ok:true,service:'malidesk-api'}); } catch { res.status(503).json({ok:false}); } });
+app.get('/', (req, res) => res.json({ ok: true, service: 'malidesk-api' }));
+app.get('/api/health', async (req,res) => { try { await pool.query('SELECT 1'); res.json({ok:true,service:'malidesk-api'}); } catch (e) { console.error('Health check failed:', e.message); res.status(503).json({ok:false,service:'malidesk-api',error:'Database unavailable'}); } });
 
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Authentication temporarily unavailable. Try again later.' } });
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
@@ -190,6 +210,7 @@ app.post('/api/data/bootstrap', requireAuth, requirePermission('import_data'), a
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   const username = String(req.body?.username || '').trim();
   const password = String(req.body?.password || '');
+  const remember = Boolean(req.body?.remember);
   try {
     const { rows } = await pool.query('SELECT * FROM app_users WHERE lower(username)=lower($1)', [username]);
     const user = rows[0];
@@ -202,7 +223,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     await pool.query('INSERT INTO sessions(user_id,token_hash,expires_at) VALUES($1,$2,now()+($3 || \' days\')::interval)', [user.id, hashToken(token), SESSION_DAYS]);
     await pool.query('UPDATE app_users SET last_login_at=now(),updated_at=now() WHERE id=$1', [user.id]);
     await audit({ ...req, user }, 'LOGIN_SUCCESS', 'user', user.id);
-    res.cookie(cookieName, token, { httpOnly: true, secure: process.env.COOKIE_SECURE !== 'false', sameSite: 'lax', ...(remember ? { maxAge: REMEMBER_DAYS * 86400000 } : {}), path: '/' });
+    res.cookie(cookieName, token, { httpOnly: true, secure: process.env.COOKIE_SECURE !== 'false', sameSite: 'lax', ...(remember ? { maxAge: REMEMBER_DAYS * 86400000 } : { maxAge: SESSION_HOURS * 60 * 60 * 1000 }), path: '/' });
     res.json({ user: { id:user.id, fullName:user.full_name, username:user.username, email:user.email, role:user.role, mustChangePassword:user.must_change_password } });
   } catch (e) { console.error(e); res.status(500).json({ error: 'Unable to sign in' }); }
 });
