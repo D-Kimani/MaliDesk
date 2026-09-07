@@ -48,7 +48,7 @@ const uid = (p) => {
 const DATA_KEY = "malidesk-data-v3";
 const LEGACY_DATA_KEY = "malidesk-data-v1";
 const DATA_VERSION = 3;
-const AUTH_API_BASE = (import.meta?.env?.VITE_API_BASE_URL || (import.meta?.env?.PROD ? "https://malidesk.onrender.com" : "")).replace(/\/$/, "");
+const AUTH_API_BASE = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? "https://malidesk.onrender.com" : "")).replace(/\/$/, "");
 // SECURITY NOTE: the existing local data layer is intentionally preserved for offline compatibility.
 // Production deployments must route sensitive mutations through the authenticated API layer.
 
