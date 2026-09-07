@@ -320,7 +320,7 @@ const NAV_ITEMS = [
   { key: "units", label: "Current units", icon: ListChecks },
   { key: "archive", label: "Closed tenancies", icon: ArchiveIcon },
   { key: "importexport", label: "Import & export", icon: UploadCloud },
-  { key: "users", label: "Users & access", icon: Users, adminOnly: true },
+  { key: "users", label: "Users & Access", icon: Users, adminOnly: true },
 ];
 
 function MaliDeskBrand({ onClick, compact = false }) {
@@ -354,7 +354,7 @@ function Sidebar({ screen, go, role, onLogout }) {
         <div className="text-[10px] font-bold tracking-wider mb-2" style={{ color: "#7FA396" }}>WORKSPACE</div>
       </div>
       <nav className="px-3 flex flex-col gap-0.5">
-        {NAV_ITEMS.filter((item) => !item.adminOnly || role === "Owner/Admin").map((item) => {
+        {NAV_ITEMS.filter((item) => !item.adminOnly || role === "Owner/Admin" || role === "Administrator").map((item) => {
           const active = screen === item.key || (screen === "unit" && item.key === "units") || (screen === "statement" && item.key === "units") || (screen === "close" && item.key === "units") || (screen === "archiveDetail" && item.key === "archive");
           return (
             <button
@@ -389,7 +389,7 @@ function Sidebar({ screen, go, role, onLogout }) {
 
 function MobileNav({ screen, go, role }) {
   const [open, setOpen] = useState(false);
-  const items = NAV_ITEMS.filter((item) => !item.adminOnly || role === "Owner/Admin");
+  const items = NAV_ITEMS.filter((item) => !item.adminOnly || role === "Owner/Admin" || role === "Administrator");
   const navigate = (key) => { go(key); setOpen(false); };
   return (
     <>
@@ -455,6 +455,7 @@ function MaliDeskCore({ auth }) {
   const syncBusyRef = useRef(false);
   const skipNextSaveRef = useRef(false);
   const role = auth.user.role === "Administrator" ? "Owner/Admin" : auth.user.role === "Manager" ? "Manager" : auth.user.role === "Staff" ? "Staff" : "Read-only viewer";
+  const canManageUsers = auth.user.role === "Administrator";
   const [view, setView] = useState({ screen: "overview" });
   const [toast, setToast] = useState(null);
   const [topQ, setTopQ] = useState("");
@@ -1342,7 +1343,7 @@ function MaliDeskCore({ auth }) {
           {view.screen === "archiveDetail" && (
             <ArchiveDetail data={data} archiveId={view.archiveId} back={() => go("archive")} />
           )}
-          {view.screen === "users" && role === "Owner/Admin" && (
+          {view.screen === "users" && canManageUsers && (
             <UserManagement auth={auth} showToast={showToast} />
           )}
           {view.screen === "importexport" && (
