@@ -33,15 +33,7 @@ const kes = (n) =>
   new Intl.NumberFormat("en-KE", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(
     Number.isFinite(n) ? n : 0
   );
-const fmtDate = (d) => {
-  if (!d) return "—";
-  const value = String(d).trim();
-  // Calendar dates such as YYYY-MM-DD must never be parsed as UTC.
-  // Parse them as date-only values so Kenya/local timezone cannot shift them back one day.
-  const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/);
-  const date = iso ? new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])) : new Date(d);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-};
+const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 const monthLabel = (ym) => {
   if (!ym) return "—";
   const [y, m] = ym.split("-");
@@ -56,7 +48,14 @@ const uid = (p) => {
 const DATA_KEY = "malidesk-data-v3";
 const LEGACY_DATA_KEY = "malidesk-data-v1";
 const DATA_VERSION = 3;
-const AUTH_API_BASE = (import.meta?.env?.VITE_API_BASE_URL || (import.meta?.env?.PROD ? "https://malidesk.onrender.com" : "")).replace(/\/$/, "");
+const AUTH_API_BASE = (() => {
+  const configured = String(import.meta?.env?.VITE_API_BASE_URL || "").trim().replace(/\/$/, "");
+  if (configured) return configured;
+  // Production frontend and API are deployed separately on Render.
+  // Keep one consistent API origin for login, session checks and all protected requests.
+  if (import.meta?.env?.PROD) return "https://malidesk.onrender.com";
+  return ""; // Vite dev proxy handles /api locally.
+})();
 // SECURITY NOTE: the existing local data layer is intentionally preserved for offline compatibility.
 // Production deployments must route sensitive mutations through the authenticated API layer.
 
