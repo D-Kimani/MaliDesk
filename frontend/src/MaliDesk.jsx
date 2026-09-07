@@ -930,7 +930,19 @@ function MaliDeskCore({ auth }) {
       const skipSheets = new Set(["Summary", "Statement", "Archive", "Instructions", "Units & Balances", "Transactions", "Closed Tenancies", "Empty"]);
       const sheetNames = wb.SheetNames.filter((n) => !skipSheets.has(n));
       const get = (ws, r, c) => { const cell = ws[XLSX.utils.encode_cell({ r: r - 1, c: c - 1 })]; return cell ? cell.v : undefined; };
-      const toISO = (v) => { if (v == null) return null; if (v instanceof Date) return v.toISOString().slice(0, 10); return String(v); };
+      // Excel stores worksheet dates as calendar dates, not instants in time.
+      // Converting SheetJS Date objects with toISOString() can cross a timezone
+      // boundary and make the imported ledger date one day earlier/later.
+      // Read the calendar components directly so the worksheet date is preserved
+      // exactly, regardless of the browser/device timezone.
+      const toISO = (v) => {
+        if (v == null) return null;
+        if (v instanceof Date) {
+          const pad = (n) => String(n).padStart(2, "0");
+          return `${v.getFullYear()}-${pad(v.getMonth() + 1)}-${pad(v.getDate())}`;
+        }
+        return String(v);
+      };
 
       // A cell only counts as filled once null/undefined, empty strings and
       // whitespace-only strings are all ruled out — this is what keeps
