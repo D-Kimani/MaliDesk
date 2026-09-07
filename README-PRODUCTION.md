@@ -54,4 +54,12 @@ If the frontend is deployed at `https://malidesk-frontend.onrender.com` and the 
 - `DATABASE_URL=<your Render PostgreSQL external/internal connection string>`
 - `SESSION_SECRET=<long random secret>`
 
-After changing frontend environment variables, rebuild/redeploy the frontend because Vite injects `VITE_*` variables at build time. The API health check is `/api/health`.
+After changing frontend environment variables, rebuild/redeploy the frontend because Vite injects `VITE_*` variables at build time. The frontend authentication client also has a production fallback to `https://malidesk.onrender.com`, so `/api/auth/*` requests are never intentionally sent to the frontend origin in a production build. The API health check is `/api/health`.
+
+### Deployment verification
+1. On the frontend Render service, set `VITE_API_BASE_URL=https://malidesk.onrender.com`.
+2. Trigger a fresh frontend deploy/build.
+3. Open `https://malidesk.onrender.com/api/health` and confirm the API responds.
+4. In browser DevTools, confirm authentication requests go to `https://malidesk.onrender.com/api/auth/me` rather than `https://malidesk-frontend.onrender.com/api/auth/me`.
+5. A logged-out `/api/auth/me` response of `401` is expected; a `404` from the frontend domain indicates an incorrectly built/deployed frontend.
+

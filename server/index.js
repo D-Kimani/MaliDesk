@@ -53,7 +53,14 @@ const hashToken = (token) => crypto.createHash('sha256').update(token).digest('h
 const newToken = () => crypto.randomBytes(32).toString('base64url');
 
 async function audit(req, action, entity = null, entityId = null, details = {}) {
-  await pool.query(`INSERT INTO audit_logs(actor_user_id,action,entity,entity_id,ip_address,user_agent,details) VALUES($1,$2,$3,$4,$5,$6,$7)`, [req.user?.id || null, action, entity, entityId, req.ip, req.get('user-agent') || '', JSON.stringify(details)]);
+  const actorId = req.user?.id || null;
+  const ip = req.ip || null;
+  const ua = (typeof req.get === 'function' ? req.get('user-agent') : '') || '';
+  await pool.query(
+    `INSERT INTO audit_logs(actor_user_id,action,entity,entity_id,ip_address,user_agent,details) 
+     VALUES($1,$2,$3,$4,$5,$6,$7)`,
+    [actorId, action, entity, entityId, ip, ua, JSON.stringify(details)]
+  );
 }
 
 async function requireAuth(req, res, next) {
@@ -222,7 +229,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     const token = newToken();
     await pool.query('INSERT INTO sessions(user_id,token_hash,expires_at) VALUES($1,$2,now()+($3 || \' days\')::interval)', [user.id, hashToken(token), SESSION_DAYS]);
     await pool.query('UPDATE app_users SET last_login_at=now(),updated_at=now() WHERE id=$1', [user.id]);
-    await audit({ ...req, user }, 'LOGIN_SUCCESS', 'user', user.id);
+    await audit({ ...req, user: { id: user.id } }, 'LOGIN_SUCCESS', 'user', user.id);
     res.cookie(cookieName, token, { httpOnly: true, secure: process.env.COOKIE_SECURE !== 'false', sameSite: 'lax', ...(remember ? { maxAge: REMEMBER_DAYS * 86400000 } : { maxAge: SESSION_HOURS * 60 * 60 * 1000 }), path: '/' });
     res.json({ user: { id:user.id, fullName:user.full_name, username:user.username, email:user.email, role:user.role, mustChangePassword:user.must_change_password } });
   } catch (e) { console.error(e); res.status(500).json({ error: 'Unable to sign in' }); }
