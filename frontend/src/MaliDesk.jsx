@@ -33,7 +33,15 @@ const kes = (n) =>
   new Intl.NumberFormat("en-KE", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(
     Number.isFinite(n) ? n : 0
   );
-const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—");
+const fmtDate = (d) => {
+  if (!d) return "—";
+  const value = String(d).trim();
+  // Calendar dates such as YYYY-MM-DD must never be parsed as UTC.
+  // Parse them as date-only values so Kenya/local timezone cannot shift them back one day.
+  const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/);
+  const date = iso ? new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])) : new Date(d);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+};
 const monthLabel = (ym) => {
   if (!ym) return "—";
   const [y, m] = ym.split("-");
@@ -48,7 +56,7 @@ const uid = (p) => {
 const DATA_KEY = "malidesk-data-v3";
 const LEGACY_DATA_KEY = "malidesk-data-v1";
 const DATA_VERSION = 3;
-const AUTH_API_BASE = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? "https://malidesk.onrender.com" : "")).replace(/\/$/, "");
+const AUTH_API_BASE = (import.meta?.env?.VITE_API_BASE_URL || (import.meta?.env?.PROD ? "https://malidesk.onrender.com" : "")).replace(/\/$/, "");
 // SECURITY NOTE: the existing local data layer is intentionally preserved for offline compatibility.
 // Production deployments must route sensitive mutations through the authenticated API layer.
 
@@ -923,11 +931,6 @@ function MaliDeskCore({ auth }) {
       const skipSheets = new Set(["Summary", "Statement", "Archive", "Instructions", "Units & Balances", "Transactions", "Closed Tenancies", "Empty"]);
       const sheetNames = wb.SheetNames.filter((n) => !skipSheets.has(n));
       const get = (ws, r, c) => { const cell = ws[XLSX.utils.encode_cell({ r: r - 1, c: c - 1 })]; return cell ? cell.v : undefined; };
-      // Excel stores worksheet dates as calendar dates, not instants in time.
-      // Converting SheetJS Date objects with toISOString() can cross a timezone
-      // boundary and make the imported ledger date one day earlier/later.
-      // Read the calendar components directly so the worksheet date is preserved
-      // exactly, regardless of the browser/device timezone.
       const toISO = (v) => {
         if (v == null || v === "") return null;
         const pad = (n) => String(n).padStart(2, "0");
@@ -936,7 +939,7 @@ function MaliDeskCore({ auth }) {
         if (typeof v === "number" && Number.isFinite(v)) { const parsed = XLSX.SSF.parse_date_code(v); if (parsed?.y && parsed?.m && parsed?.d) return `${parsed.y}-${pad(parsed.m)}-${pad(parsed.d)}`; }
         const text = String(v).trim(); if (!text) return null;
         const iso = text.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/); if (iso) return `${iso[1]}-${pad(iso[2])}-${pad(iso[3])}`;
-        const dmy = text.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/); if (dmy) return `${dmy[3]}-${pad(dmy[2])}-${pad(dmy[1])}`;
+        const dmy = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/); if (dmy) return `${dmy[3]}-${pad(dmy[2])}-${pad(dmy[1])}`;
         return text;
       };
 
