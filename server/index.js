@@ -15,6 +15,8 @@ const SESSION_DAYS = 7;
 const SESSION_HOURS = 12;
 const REMEMBER_DAYS = 30;
 const cookieName = 'malidesk_session';
+const cookieSameSite = process.env.COOKIE_SAMESITE || ((process.env.CORS_ORIGIN && process.env.COOKIE_SECURE !== 'false') ? 'none' : 'lax');
+const sessionCookieOptions = (extra = {}) => ({ httpOnly:true, secure:process.env.COOKIE_SECURE !== 'false', sameSite:cookieSameSite, path:'/', ...extra });
 
 if (!process.env.DATABASE_URL) {
   console.error('DATABASE_URL is missing. Create server/.env from server/.env.example before starting MaliDesk.');
@@ -223,7 +225,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     await pool.query('INSERT INTO sessions(user_id,token_hash,expires_at) VALUES($1,$2,now()+($3 || \' days\')::interval)', [user.id, hashToken(token), SESSION_DAYS]);
     await pool.query('UPDATE app_users SET last_login_at=now(),updated_at=now() WHERE id=$1', [user.id]);
     await audit({ ...req, user }, 'LOGIN_SUCCESS', 'user', user.id);
-    res.cookie(cookieName, token, { httpOnly: true, secure: process.env.COOKIE_SECURE !== 'false', sameSite: 'lax', ...(remember ? { maxAge: REMEMBER_DAYS * 86400000 } : { maxAge: SESSION_HOURS * 60 * 60 * 1000 }), path: '/' });
+    res.cookie(cookieName, token, sessionCookieOptions(remember ? { maxAge: REMEMBER_DAYS * 86400000 } : { maxAge: SESSION_HOURS * 60 * 60 * 1000 }));
     res.json({ user: { id:user.id, fullName:user.full_name, username:user.username, email:user.email, role:user.role, mustChangePassword:user.must_change_password } });
   } catch (e) { console.error(e); res.status(500).json({ error: 'Unable to sign in' }); }
 });
@@ -231,7 +233,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 app.post('/api/auth/logout', requireAuth, async (req, res) => {
   await pool.query('UPDATE sessions SET revoked_at=now() WHERE id=$1', [req.user.session_id]);
   await audit(req, 'LOGOUT', 'user', req.user.id);
-  res.clearCookie(cookieName, { httpOnly:true, secure:process.env.COOKIE_SECURE !== 'false', sameSite:'lax', path:'/' });
+  res.clearCookie(cookieName, sessionCookieOptions());
   res.json({ ok:true });
 });
 
@@ -256,6 +258,39 @@ app.post('/api/users', requireAuth, requirePermission('manage_users'), async (re
     await audit(req,'USER_CREATED','user',rows[0].id,{role});
     res.status(201).json({ user:rows[0] });
   } catch(e) { await client.query('ROLLBACK'); if(e.code==='23505') return res.status(409).json({error:'Username or email already exists'}); res.status(500).json({error:'Unable to create user'}); } finally { client.release(); }
+});
+
+app.patch('/api/users/:id', requireAuth, requirePermission('manage_users'), async (req,res) => {
+  const target = req.params.id;
+  const { fullName, username, email, role, status, password } = req.body || {};
+  if (!fullName?.trim() || !username?.trim()) return res.status(400).json({error:'Full name and username are required'});
+  if (!['Administrator','Manager','Staff','Viewer'].includes(role)) return res.status(400).json({error:'Invalid role'});
+  if (!['active','inactive'].includes(status)) return res.status(400).json({error:'Invalid status'});
+  if (role === 'Administrator' && req.user.role !== 'Administrator') return res.status(403).json({error:'Only an Administrator can assign Administrator role'});
+  const { rows: existing } = await pool.query('SELECT id,role,status FROM app_users WHERE id=$1',[target]);
+  if (!existing[0]) return res.status(404).json({error:'User not found'});
+  if (existing[0].role === 'Administrator' && role !== 'Administrator') {
+    const { rows:a } = await pool.query("SELECT count(*)::int AS n FROM app_users WHERE role='Administrator' AND status='active'");
+    if (existing[0].status === 'active' && a[0].n <= 1) return res.status(409).json({error:'The last active Administrator cannot be demoted'});
+  }
+  if (existing[0].role === 'Administrator' && status === 'inactive' && existing[0].status === 'active') {
+    const { rows:a } = await pool.query("SELECT count(*)::int AS n FROM app_users WHERE role='Administrator' AND status='active'");
+    if (a[0].n <= 1) return res.status(409).json({error:'The last active Administrator cannot be deactivated'});
+  }
+  if (target === req.user.id && status === 'inactive') return res.status(409).json({error:'You cannot deactivate your own account'});
+  if (password !== undefined && password !== '') {
+    if (String(password).length < 8 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) return res.status(400).json({error:'Password must be at least 8 characters and include upper, lower and number'});
+  }
+  try {
+    const fields = ['full_name=$1','username=$2','email=$3','role=$4','status=$5','updated_at=now()'];
+    const values = [fullName.trim(), username.trim(), email?.trim() || null, role, status];
+    if (password !== undefined && password !== '') { fields.push(`password_hash=$${values.length+1}`); values.push(await bcrypt.hash(password,12)); fields.push('must_change_password=true'); }
+    values.push(target);
+    const { rows } = await pool.query(`UPDATE app_users SET ${fields.join(',')} WHERE id=$${values.length} RETURNING id,full_name,username,email,role,status,last_login_at,created_at,must_change_password`, values);
+    if (password !== undefined && password !== '') await pool.query('UPDATE sessions SET revoked_at=now() WHERE user_id=$1 AND id<>$2',[target,req.user.session_id]);
+    await audit(req,'USER_UPDATED','user',target,{role,status,passwordChanged:Boolean(password)});
+    res.json({ok:true,user:rows[0]});
+  } catch(e) { if(e.code==='23505') return res.status(409).json({error:'Username or email already exists'}); console.error(e); res.status(500).json({error:'Unable to update user'}); }
 });
 
 app.patch('/api/users/:id/status', requireAuth, requirePermission('manage_users'), async (req,res) => {

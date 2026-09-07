@@ -48,7 +48,7 @@ const uid = (p) => {
 const DATA_KEY = "malidesk-data-v3";
 const LEGACY_DATA_KEY = "malidesk-data-v1";
 const DATA_VERSION = 3;
-const AUTH_API_BASE = (globalThis?.MALIDESK_API_BASE || "").replace(/\/$/, "");
+const AUTH_API_BASE = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? "https://malidesk.onrender.com" : "")).replace(/\/$/, "");
 // SECURITY NOTE: the existing local data layer is intentionally preserved for offline compatibility.
 // Production deployments must route sensitive mutations through the authenticated API layer.
 
@@ -357,13 +357,6 @@ function Sidebar({ screen, go, role, onLogout }) {
       </nav>
 
       <div className="mt-auto px-4 pb-4">
-        <div className="rounded-xl px-3.5 py-3 mb-3" style={{ background: SIDEBAR_ACTIVE }}>
-          <div className="flex items-center gap-2 text-xs font-bold mb-1" style={{ color: "#fff" }}>
-            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: "#E06666" }} />
-            Offline mode
-          </div>
-          <div className="text-[11px] leading-snug" style={{ color: "#9FC2B4" }}>Your workspace is synced and ready for today.</div>
-        </div>
         <div className="border-t pt-3" style={{ borderColor: SIDEBAR_BORDER }}>
           <button className="p-1.5 rounded-lg mb-2" style={{ color: "#B9CCC3" }}><Settings size={16} /></button>
           <div className="flex items-center gap-2.5">
@@ -859,7 +852,17 @@ function MaliDeskCore({ auth }) {
       const skipSheets = new Set(["Summary", "Statement", "Archive", "Instructions", "Units & Balances", "Transactions", "Closed Tenancies", "Empty"]);
       const sheetNames = wb.SheetNames.filter((n) => !skipSheets.has(n));
       const get = (ws, r, c) => { const cell = ws[XLSX.utils.encode_cell({ r: r - 1, c: c - 1 })]; return cell ? cell.v : undefined; };
-      const toISO = (v) => { if (v == null) return null; if (v instanceof Date) return v.toISOString().slice(0, 10); return String(v); };
+      const toISO = (v) => {
+        if (v == null || v === "") return null;
+        const pad = (n) => String(n).padStart(2, "0");
+        // Excel dates are calendar dates. Avoid toISOString(), which can shift a date across midnight through UTC.
+        if (v instanceof Date && !Number.isNaN(v.getTime())) return `${v.getFullYear()}-${pad(v.getMonth()+1)}-${pad(v.getDate())}`;
+        if (typeof v === "number" && Number.isFinite(v)) { const parsed = XLSX.SSF.parse_date_code(v); if (parsed?.y && parsed?.m && parsed?.d) return `${parsed.y}-${pad(parsed.m)}-${pad(parsed.d)}`; }
+        const text = String(v).trim(); if (!text) return null;
+        const iso = text.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/); if (iso) return `${iso[1]}-${pad(iso[2])}-${pad(iso[3])}`;
+        const dmy = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/); if (dmy) return `${dmy[3]}-${pad(dmy[2])}-${pad(dmy[1])}`;
+        return text;
+      };
 
       // A cell only counts as filled once null/undefined, empty strings and
       // whitespace-only strings are all ruled out — this is what keeps
@@ -2279,16 +2282,23 @@ function LoginScreen({ onLogin }) {
 }
 
 function UserManagement({ auth }) {
-  const [users, setUsers] = useState([]); const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
-  const [form, setForm] = useState({ fullName:"", username:"", email:"", role:"Viewer", password:"" });
-  const load = useCallback(async () => { try { const r = await authApi("/api/users"); setUsers(r.users || []); } catch(e) { setError(e.message); } }, []);
+  const emptyForm = { fullName: "", username: "", email: "", role: "Viewer", status: "active", password: "" };
+  const [users, setUsers] = useState([]); const [open, setOpen] = useState(false); const [editing, setEditing] = useState(null); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [success, setSuccess] = useState(""); const [form, setForm] = useState(emptyForm);
+  const roleDescriptions = [["Administrator", "Full access"],["Manager", "Can manage units, tenants, payments, reports, etc."],["Staff", "Limited operational access"],["Viewer", "Read-only access"]];
+  const load = useCallback(async () => { try { const r = await authApi("/api/users"); setUsers(r.users || []); } catch (e) { setError(e.message || "Unable to load users."); } }, []);
   useEffect(() => { load(); }, [load]);
-  const save = async (e) => { e.preventDefault(); setBusy(true); setError(""); try { await authApi("/api/users", { method:"POST", body:JSON.stringify(form) }); setOpen(false); setForm({fullName:"",username:"",email:"",role:"Viewer",password:""}); await load(); } catch(e) { setError(e.message); } finally { setBusy(false); } };
-  const toggle = async (u) => { try { await authApi(`/api/users/${u.id}/status`, { method:"PATCH", body:JSON.stringify({status:u.status === "active" ? "inactive" : "active"}) }); await load(); } catch(e) { setError(e.message); } };
-  return <div className="pt-2"><div className="flex items-start justify-between gap-3 mb-5"><div><div className="text-[11px] font-bold tracking-wide" style={{color:MUTED}}>SECURITY</div><h1 className="text-xl font-bold">Users & access</h1><p className="text-sm" style={{color:MUTED}}>Manage accounts, roles and access status.</p></div><Btn icon={UserPlus} onClick={()=>{setError("");setOpen(true)}}>Add User</Btn></div>
-    {error && <div className="text-sm text-red-700 bg-red-50 rounded-xl p-3 mb-4">{error}</div>}
-    <div className="rounded-2xl border bg-white overflow-hidden" style={{borderColor:BORDER}}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr style={{borderBottom:`1px solid ${BORDER}`}}>{["Full Name","Username","Email","Role","Status","Last Login","Date Created","Actions"].map(h=><th key={h} className="text-left px-3 py-2.5 text-xs font-bold whitespace-nowrap" style={{color:MUTED}}>{h}</th>)}</tr></thead><tbody>{users.map(u=><tr key={u.id} style={{borderBottom:`1px solid ${BORDER}`}}><td className="px-3 py-3 font-semibold">{u.full_name}</td><td className="px-3 py-3">{u.username}</td><td className="px-3 py-3">{u.email || "—"}</td><td className="px-3 py-3">{u.role}</td><td className="px-3 py-3"><Pill label={u.status === "active" ? "Active" : "Inactive"} colorKey={u.status === "active" ? "PAID" : "HIGH"} /></td><td className="px-3 py-3">{u.last_login_at ? fmtDate(u.last_login_at) : "Never"}</td><td className="px-3 py-3">{fmtDate(u.created_at)}</td><td className="px-3 py-3"><button onClick={()=>toggle(u)} className="text-xs font-semibold" style={{color:u.status === "active" ? "#C0392B" : "#1F8A4C"}}>{u.status === "active" ? "Deactivate" : "Activate"}</button></td></tr>)}</tbody></table></div></div>
-    {open && <Modal title="Add User" onClose={()=>setOpen(false)}><form onSubmit={save}><Field label="Full Name"><input value={form.fullName} onChange={e=>setForm({...form,fullName:e.target.value})} className={inputCls} style={inputStyle} required /></Field><Field label="Username"><input value={form.username} onChange={e=>setForm({...form,username:e.target.value})} className={inputCls} style={inputStyle} required /></Field><Field label="Email"><input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className={inputCls} style={inputStyle} /></Field><Field label="Role"><select value={form.role} onChange={e=>setForm({...form,role:e.target.value})} className={inputCls} style={inputStyle}><option>Viewer</option><option>Staff</option><option>Manager</option><option>Administrator</option></select></Field><Field label="Temporary password" hint="At least 8 characters with upper, lower and number."><input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} className={inputCls} style={inputStyle} required /></Field><div className="flex justify-end gap-2"><Btn variant="secondary" onClick={()=>setOpen(false)}>Cancel</Btn><Btn disabled={busy}>{busy?"Creating…":"Create User"}</Btn></div></form></Modal>}
+  const openCreate = () => { setEditing(null); setForm(emptyForm); setError(""); setSuccess(""); setOpen(true); };
+  const openEdit = (u) => { setEditing(u); setForm({ fullName:u.full_name||"", username:u.username||"", email:u.email||"", role:u.role||"Viewer", status:u.status||"active", password:"" }); setError(""); setSuccess(""); setOpen(true); };
+  const save = async (e) => { e.preventDefault(); setBusy(true); setError(""); setSuccess(""); try { if (editing) await authApi(`/api/users/${editing.id}`, {method:"PATCH", body:JSON.stringify(form)}); else await authApi("/api/users", {method:"POST", body:JSON.stringify(form)}); setOpen(false); setEditing(null); setForm(emptyForm); await load(); setSuccess(editing ? "User updated successfully." : "User created successfully."); } catch(e) { setError(e.message || (editing ? "Unable to update user." : "Unable to create user.")); } finally { setBusy(false); } };
+  const toggle = async (u) => { setError(""); setSuccess(""); try { await authApi(`/api/users/${u.id}/status`, {method:"PATCH", body:JSON.stringify({status:u.status === "active" ? "inactive" : "active"})}); await load(); setSuccess(`User ${u.status === "active" ? "deactivated" : "activated"} successfully.`); } catch(e) { setError(e.message || "Unable to update status."); } };
+  return <div className="pt-2">
+    <div className="flex items-start justify-between gap-3 mb-5"><div><div className="text-[11px] font-bold tracking-wide" style={{color:MUTED}}>SECURITY</div><h1 className="text-xl font-bold">Users & access</h1><p className="text-sm" style={{color:MUTED}}>Manage accounts, roles and access status.</p></div><Btn icon={UserPlus} onClick={openCreate}>Add User</Btn></div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-5">{roleDescriptions.map(([name,description])=><div key={name} className="rounded-xl border bg-white p-3" style={{borderColor:BORDER}}><div className="font-bold text-sm">{name}</div><div className="text-[11px] mt-1" style={{color:MUTED}}>{description}</div></div>)}</div>
+    {error && <div className="text-sm text-red-700 bg-red-50 rounded-xl p-3 mb-4">{error}</div>}{success && <div className="text-sm text-green-700 bg-green-50 rounded-xl p-3 mb-4">{success}</div>}
+    <div className="rounded-2xl border bg-white overflow-hidden" style={{borderColor:BORDER}}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr style={{borderBottom:`1px solid ${BORDER}`}}>{["Full Name","Username","Email","Role","Status","Last Login","Date Created","Actions"].map(h=><th key={h} className="text-left px-3 py-2.5 text-xs font-bold whitespace-nowrap" style={{color:MUTED}}>{h}</th>)}</tr></thead><tbody>{users.map(u=><tr key={u.id} style={{borderBottom:`1px solid ${BORDER}`}}><td className="px-3 py-3 font-semibold">{u.full_name}</td><td className="px-3 py-3">{u.username}</td><td className="px-3 py-3">{u.email||"—"}</td><td className="px-3 py-3 font-semibold">{u.role}</td><td className="px-3 py-3"><Pill label={u.status === "active" ? "Active" : "Inactive"} colorKey={u.status === "active" ? "PAID" : "HIGH"}/></td><td className="px-3 py-3">{u.last_login_at ? fmtDate(u.last_login_at) : "Never"}</td><td className="px-3 py-3">{fmtDate(u.created_at)}</td><td className="px-3 py-3"><div className="flex items-center gap-3"><button onClick={()=>openEdit(u)} className="text-xs font-semibold" style={{color:AMBER_DARK}}><Pencil size={13} className="inline mr-1"/>Edit</button><button onClick={()=>toggle(u)} className="text-xs font-semibold" style={{color:u.status === "active" ? "#C0392B" : "#1F8A4C"}}>{u.status === "active" ? "Deactivate" : "Activate"}</button></div></td></tr>)}</tbody></table></div></div>
+    {open && <Modal title={editing ? "Edit User" : "Add User"} onClose={()=>{if(!busy){setOpen(false);setEditing(null)}}}><form onSubmit={save}>
+      <Field label="Full Name"><input value={form.fullName} onChange={e=>setForm({...form,fullName:e.target.value})} className={inputCls} style={inputStyle} required/></Field><Field label="Username"><input autoComplete="username" value={form.username} onChange={e=>setForm({...form,username:e.target.value})} className={inputCls} style={inputStyle} required/></Field><Field label="Email"><input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className={inputCls} style={inputStyle}/></Field><Field label="Role"><select value={form.role} onChange={e=>setForm({...form,role:e.target.value})} className={inputCls} style={inputStyle}><option value="Administrator">Administrator — Full access</option><option value="Manager">Manager — Units, tenants, payments, reports, etc.</option><option value="Staff">Staff — Limited operational access</option><option value="Viewer">Viewer — Read-only access</option></select></Field>{editing&&<Field label="Status"><select value={form.status} onChange={e=>setForm({...form,status:e.target.value})} className={inputCls} style={inputStyle}><option value="active">Active</option><option value="inactive">Inactive</option></select></Field>}<Field label={editing?"New password (optional)":"Temporary password"} hint={editing?"Leave blank to keep the current password.":"At least 8 characters with upper, lower and number."}><input type="password" autoComplete="new-password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} className={inputCls} style={inputStyle} required={!editing}/></Field>
+      {error&&<div className="text-sm text-red-700 bg-red-50 rounded-xl p-3 mb-4">{error}</div>}<div className="flex justify-end gap-2"><Btn variant="secondary" type="button" onClick={()=>setOpen(false)}>Cancel</Btn><Btn disabled={busy}>{busy?(editing?"Saving…":"Creating…"):(editing?"Save Changes":"Create User")}</Btn></div></form></Modal>}
   </div>;
 }
 
