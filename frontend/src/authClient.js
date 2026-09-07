@@ -1,9 +1,4 @@
-const API_BASE = (() => {
-  const configured = String(import.meta.env.VITE_API_BASE_URL || "").trim().replace(/\/$/, "");
-  if (configured) return configured;
-  if (import.meta.env.PROD) return "https://malidesk.onrender.com";
-  return "";
-})();
+const API_BASE = "https://malidesk.onrender.com";
 
 export async function api(path, options = {}) {
   const url = `${API_BASE}${path}`;
@@ -19,9 +14,3 @@ export async function api(path, options = {}) {
   if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
   return data;
 }
-
-export const login = (username, password, remember = false) => api("/api/auth/login", {
-  method: "POST", body: JSON.stringify({ username, password, remember }),
-});
-export const logout = () => api("/api/auth/logout", { method: "POST" });
-export const me = () => api("/api/auth/me");

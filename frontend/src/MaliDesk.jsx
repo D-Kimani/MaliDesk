@@ -48,14 +48,7 @@ const uid = (p) => {
 const DATA_KEY = "malidesk-data-v3";
 const LEGACY_DATA_KEY = "malidesk-data-v1";
 const DATA_VERSION = 3;
-const AUTH_API_BASE = (() => {
-  const configured = String(import.meta?.env?.VITE_API_BASE_URL || "").trim().replace(/\/$/, "");
-  if (configured) return configured;
-  // Production frontend and API are deployed separately on Render.
-  // Keep one consistent API origin for login, session checks and all protected requests.
-  if (import.meta?.env?.PROD) return "https://malidesk.onrender.com";
-  return ""; // Vite dev proxy handles /api locally.
-})();
+const AUTH_API_BASE = "https://malidesk.onrender.com";
 // SECURITY NOTE: the existing local data layer is intentionally preserved for offline compatibility.
 // Production deployments must route sensitive mutations through the authenticated API layer.
 
