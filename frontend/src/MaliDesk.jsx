@@ -923,15 +923,35 @@ function MaliDeskCore({ auth }) {
       const skipSheets = new Set(["Summary", "Statement", "Archive", "Instructions", "Units & Balances", "Transactions", "Closed Tenancies", "Empty"]);
       const sheetNames = wb.SheetNames.filter((n) => !skipSheets.has(n));
       const get = (ws, r, c) => { const cell = ws[XLSX.utils.encode_cell({ r: r - 1, c: c - 1 })]; return cell ? cell.v : undefined; };
-      const toISO = (v) => {
+            const toISO = (v) => {
         if (v == null || v === "") return null;
         const pad = (n) => String(n).padStart(2, "0");
-        // Excel dates are calendar dates. Avoid toISOString(), which can shift a date across midnight through UTC.
-        if (v instanceof Date && !Number.isNaN(v.getTime())) return `${v.getFullYear()}-${pad(v.getMonth()+1)}-${pad(v.getDate())}`;
-        if (typeof v === "number" && Number.isFinite(v)) { const parsed = XLSX.SSF.parse_date_code(v); if (parsed?.y && parsed?.m && parsed?.d) return `${parsed.y}-${pad(parsed.m)}-${pad(parsed.d)}`; }
-        const text = String(v).trim(); if (!text) return null;
-        const iso = text.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/); if (iso) return `${iso[1]}-${pad(iso[2])}-${pad(iso[3])}`;
-        const dmy = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/); if (dmy) return `${dmy[3]}-${pad(dmy[2])}-${pad(dmy[1])}`;
+
+        // 1. Prefer Excel serial number (timezone-safe)
+        if (typeof v === "number" && Number.isFinite(v)) {
+          const parsed = XLSX.SSF.parse_date_code(v);
+          if (parsed?.y && parsed?.m && parsed?.d) {
+            return `${parsed.y}-${pad(parsed.m)}-${pad(parsed.d)}`;
+          }
+        }
+
+        // 2. Date object – use UTC methods to avoid the common off-by-one day shift
+        if (v instanceof Date && !Number.isNaN(v.getTime())) {
+          return `${v.getUTCFullYear()}-${pad(v.getUTCMonth() + 1)}-${pad(v.getUTCDate())}`;
+        }
+
+        // 3. Text values
+        const text = String(v).trim();
+        if (!text) return null;
+
+        // YYYY-MM-DD or YYYY/MM/DD
+        const iso = text.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+        if (iso) return `${iso[1]}-${pad(iso[2])}-${pad(iso[3])}`;
+
+        // DD/MM/YYYY or DD-MM-YYYY
+        const dmy = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+        if (dmy) return `${dmy[3]}-${pad(dmy[2])}-${pad(dmy[1])}`;
+
         return text;
       };
 
