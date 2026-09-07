@@ -846,45 +846,42 @@ function MaliDeskCore({ auth }) {
   async function importWorkbook(file) {
     try {
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array", cellDates: true });
+      const wb = XLSX.read(buf, { type: "array", cellDates: false });
       // Skip the source template's non-ledger tabs, AND the sheet names
       // this app's own Export produces — so importing a file you just
       // exported from MaliDesk never gets misread as per-unit ledgers.
       const skipSheets = new Set(["Summary", "Statement", "Archive", "Instructions", "Units & Balances", "Transactions", "Closed Tenancies", "Empty"]);
       const sheetNames = wb.SheetNames.filter((n) => !skipSheets.has(n));
       const get = (ws, r, c) => { const cell = ws[XLSX.utils.encode_cell({ r: r - 1, c: c - 1 })]; return cell ? cell.v : undefined; };
-            const toISO = (v) => {
-        if (v == null || v === "") return null;
-        const pad = (n) => String(n).padStart(2, "0");
+      const toISO = (v) => {
+          if (v == null || v === "") return null;
+          const pad = (n) => String(n).padStart(2, "0");
 
-        // 1. Prefer Excel serial number (timezone-safe)
-        if (typeof v === "number" && Number.isFinite(v)) {
-          const parsed = XLSX.SSF.parse_date_code(v);
-          if (parsed?.y && parsed?.m && parsed?.d) {
-            return `${parsed.y}-${pad(parsed.m)}-${pad(parsed.d)}`;
+          // Excel serial number (most reliable – no timezone issues)
+          if (typeof v === "number" && Number.isFinite(v)) {
+            const parsed = XLSX.SSF.parse_date_code(v);
+            if (parsed?.y && parsed?.m && parsed?.d) {
+              return `${parsed.y}-${pad(parsed.m)}-${pad(parsed.d)}`;
+            }
           }
-        }
 
-        // 2. Date object – use UTC methods to avoid the common off-by-one day shift
-        if (v instanceof Date && !Number.isNaN(v.getTime())) {
-          return `${v.getUTCFullYear()}-${pad(v.getUTCMonth() + 1)}-${pad(v.getUTCDate())}`;
-        }
+          // Fallback for Date objects (use UTC to avoid off-by-one)
+          if (v instanceof Date && !Number.isNaN(v.getTime())) {
+            return `${v.getUTCFullYear()}-${pad(v.getUTCMonth() + 1)}-${pad(v.getUTCDate())}`;
+          }
 
-        // 3. Text values
-        const text = String(v).trim();
-        if (!text) return null;
+          // Text values
+          const text = String(v).trim();
+          if (!text) return null;
 
-        // YYYY-MM-DD or YYYY/MM/DD
-        const iso = text.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
-        if (iso) return `${iso[1]}-${pad(iso[2])}-${pad(iso[3])}`;
+          const iso = text.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+          if (iso) return `${iso[1]}-${pad(iso[2])}-${pad(iso[3])}`;
 
-        // DD/MM/YYYY or DD-MM-YYYY
-        const dmy = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
-        if (dmy) return `${dmy[3]}-${pad(dmy[2])}-${pad(dmy[1])}`;
+          const dmy = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+          if (dmy) return `${dmy[3]}-${pad(dmy[2])}-${pad(dmy[1])}`;
 
-        return text;
-      };
-
+          return text;
+        };
       // A cell only counts as filled once null/undefined, empty strings and
       // whitespace-only strings are all ruled out — this is what keeps
       // unused ledger rows and blank formula results out of the import.
