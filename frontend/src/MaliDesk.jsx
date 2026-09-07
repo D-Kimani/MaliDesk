@@ -12,7 +12,7 @@ import * as XLSX from "xlsx";
 /* ---------------------------------------------------------------------- */
 const BEIGE = "#F8F5F0";
 const SIDEBAR = "#1A3C34";
-const SIDEBAR_ACTIVE = "#234B41";
+const SIDEBAR_ACTIVE = "#D9A441";
 const SIDEBAR_BORDER = "#2B5347";
 const AMBER = "#D9A441";
 const AMBER_DARK = "#B7841F";
@@ -350,7 +350,7 @@ function Sidebar({ screen, go, role, onLogout }) {
               key={item.key}
               onClick={() => go(item.key)}
               className="flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold text-left transition-colors"
-              style={{ background: active ? SIDEBAR_ACTIVE : "transparent", color: active ? "#fff" : "#B9CCC3" }}
+              style={{ background: active ? SIDEBAR_ACTIVE : "transparent", color: active ? SIDEBAR : "#B9CCC3" }}
             >
               <span className="flex items-center gap-2.5"><item.icon size={16} />{item.label}</span>
               {active && <ChevronRight size={14} />}
@@ -383,7 +383,7 @@ function MobileNav({ screen, go, role }) {
         const active = screen === item.key;
         return (
           <button key={item.key} onClick={() => go(item.key)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap"
-            style={{ background: active ? SIDEBAR_ACTIVE : "transparent", color: active ? "#fff" : "#B9CCC3" }}>
+            style={{ background: active ? SIDEBAR_ACTIVE : "transparent", color: active ? SIDEBAR : "#B9CCC3" }}>
             <item.icon size={13} />{item.label}
           </button>
         );
@@ -906,6 +906,101 @@ function MaliDeskCore({ auth }) {
   }
 
 
+  function deleteUnit(unitId) {
+    if (!canEdit) return false;
+    const unit = data.units.find((u) => u.id === unitId);
+    if (!unit) { showToast("That unit could not be found."); return false; }
+    const tenant = data.tenants.find((t) => t.id === unit.currentTenantId);
+    const txnCount = data.transactions.filter((t) => t.unitId === unitId).length;
+    setData((d) => ({
+      ...d,
+      units: d.units.filter((u) => u.id !== unitId),
+      tenants: d.tenants.filter((t) => t.id !== unit.currentTenantId),
+      transactions: d.transactions.filter((t) => t.unitId !== unitId),
+      auditLog: [...d.auditLog, audit("DELETE", "unit", unitId, {
+        unitCode: unit.code,
+        tenantId: unit.currentTenantId || null,
+        tenantName: tenant?.name || null,
+        transactionCount: txnCount,
+      })],
+    }));
+    showToast(`Unit ${unit.code} deleted successfully.`);
+    go("units");
+    return true;
+  }
+
+  function updateArchiveRecord(archiveId, payload) {
+    if (!canEdit) return false;
+    const existing = data.archive.find((a) => a.id === archiveId);
+    if (!existing) { showToast("That closed tenancy could not be found."); return false; }
+    const name = String(payload.name || "").trim();
+    const moveInDate = String(payload.moveInDate || "").trim();
+    const moveOutDate = String(payload.moveOutDate || "").trim();
+    const depositHeld = Number(payload.depositHeld);
+    const amountRefunded = Number(payload.amountRefunded);
+    const amountForfeited = Number(payload.amountForfeited);
+    if (!name) { showToast("Tenant name is required."); return false; }
+    if (!moveInDate || !moveOutDate) { showToast("Move-in and move-out dates are required."); return false; }
+    if (![depositHeld, amountRefunded, amountForfeited].every(Number.isFinite) || depositHeld < 0 || amountRefunded < 0 || amountForfeited < 0) {
+      showToast("Deposit amounts must be valid non-negative amounts."); return false;
+    }
+    if (amountRefunded + amountForfeited > depositHeld) {
+      showToast("Deposit refund plus forfeiture cannot exceed the deposit held."); return false;
+    }
+    const updated = {
+      ...existing,
+      tenant: {
+        ...existing.tenant,
+        name,
+        phone: String(payload.phone || ""),
+        email: String(payload.email || ""),
+        moveInDate,
+        moveOutDate,
+        notes: String(payload.tenantNotes || ""),
+      },
+      depositHeld,
+      amountRefunded,
+      amountForfeited,
+      reasonForLeaving: String(payload.reasonForLeaving || ""),
+      arrearsOutcome: String(payload.arrearsOutcome || ""),
+      evictionNoticeDate: String(payload.evictionNoticeDate || ""),
+      evictionLockDate: String(payload.evictionLockDate || ""),
+      recoveryNotes: String(payload.recoveryNotes || ""),
+      notes: String(payload.notes || ""),
+      updatedAt: new Date().toISOString(),
+      updatedBy: role,
+    };
+    setData((d) => ({
+      ...d,
+      archive: d.archive.map((a) => (a.id === archiveId ? updated : a)),
+      auditLog: [...d.auditLog, audit("UPDATE", "closed_tenancy", archiveId, {
+        unitCode: existing.unitCode,
+        previous: existing,
+        updated,
+      })],
+    }));
+    showToast("Closed tenancy updated successfully.");
+    return true;
+  }
+
+  function deleteArchiveRecord(archiveId) {
+    if (!canEdit) return false;
+    const existing = data.archive.find((a) => a.id === archiveId);
+    if (!existing) { showToast("That closed tenancy could not be found."); return false; }
+    setData((d) => ({
+      ...d,
+      archive: d.archive.filter((a) => a.id !== archiveId),
+      auditLog: [...d.auditLog, audit("DELETE", "closed_tenancy", archiveId, {
+        unitCode: existing.unitCode,
+        tenantName: existing.tenant?.name || "",
+      })],
+    }));
+    showToast("Closed tenancy deleted successfully.");
+    go("archive");
+    return true;
+  }
+
+
   /* ---- import (template-matched Excel) ---- */
   // Full-replace import: whatever is parsed from the workbook REPLACES the
   // current units, tenants and transactions entirely — nothing from the
@@ -1210,7 +1305,7 @@ function MaliDeskCore({ auth }) {
             />
           )}
           {view.screen === "units" && (
-            <UnitsScreen rows={rows} data={data} canEdit={canEdit} openUnit={(id) => go("unit", { unitId: id })} initialQuery={topQ} goImportExport={() => go("importexport")} onAddUnit={addUnit} />
+            <UnitsScreen rows={rows} data={data} canEdit={canEdit} openUnit={(id) => go("unit", { unitId: id })} initialQuery={topQ} goImportExport={() => go("importexport")} onAddUnit={addUnit} onDeleteUnit={deleteUnit} />
           )}
           {view.screen === "unit" && (
             <UnitDetail
@@ -1230,7 +1325,7 @@ function MaliDeskCore({ auth }) {
             <CloseTenancyFlow data={data} unitId={view.unitId} back={() => go("unit", { unitId: view.unitId })} onSubmit={closeTenancy} />
           )}
           {view.screen === "archive" && (
-            <ArchiveList data={data} openDetail={(id) => go("archiveDetail", { archiveId: id })} />
+            <ArchiveList data={data} canEdit={canEdit} openDetail={(id) => go("archiveDetail", { archiveId: id })} onEdit={updateArchiveRecord} onDelete={deleteArchiveRecord} />
           )}
           {view.screen === "archiveDetail" && (
             <ArchiveDetail data={data} archiveId={view.archiveId} back={() => go("archive")} />
@@ -1430,7 +1525,7 @@ function QuickActionModal({ data, onClose, onGo }) {
 /* ---------------------------------------------------------------------- */
 /* Units & Balances                                                         */
 /* ---------------------------------------------------------------------- */
-function UnitsScreen({ rows, data, canEdit, openUnit, initialQuery, goImportExport, onAddUnit }) {
+function UnitsScreen({ rows, data, canEdit, openUnit, initialQuery, goImportExport, onAddUnit, onDeleteUnit }) {
   const [q, setQ] = useState(initialQuery || "");
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -1513,7 +1608,7 @@ function UnitsScreen({ rows, data, canEdit, openUnit, initialQuery, goImportExpo
                 {Th({ label: "Balance", k: "balance" })}
                 <th className="text-left px-3 py-2.5 text-xs font-bold" style={{ color: MUTED }}>Status</th>
                 <th className="text-left px-3 py-2.5 text-xs font-bold" style={{ color: MUTED }}>Suggested next step</th>
-                <th className="text-left px-3 py-2.5 text-xs font-bold" style={{ color: MUTED }}></th>
+                <th className="text-left px-3 py-2.5 text-xs font-bold" style={{ color: MUTED }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1541,7 +1636,14 @@ function UnitsScreen({ rows, data, canEdit, openUnit, initialQuery, goImportExpo
                     </td>
                     <td className="px-3 py-3"><Pill label={r.priority.key === "HIGH" ? "In Arrears" : r.priority.key === "PAID" ? "Up To Date" : r.priority.key === "VACANT" ? "Vacant" : "Review"} colorKey={r.priority.key} /></td>
                     <td className="px-3 py-3 whitespace-nowrap" style={{ color: MUTED }}>{r.priority.action}</td>
-                    <td className="px-3 py-3 whitespace-nowrap text-right"><span className="text-xs font-semibold inline-flex items-center gap-0.5" style={{ color: "#1F8A4C" }}>Open <ChevronRight size={13} /></span></td>
+                    <td className="px-3 py-3 whitespace-nowrap text-right">
+                      {canEdit ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <button onClick={(e) => { e.stopPropagation(); openUnit(r.unit.id); }} className="text-xs font-semibold inline-flex items-center gap-0.5" style={{ color: "#1F8A4C" }}>Open <ChevronRight size={13} /></button>
+                          <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete unit ${r.unit.code}? This will also remove its current tenant and transaction history. This cannot be undone.`)) onDeleteUnit(r.unit.id); }} className="text-xs font-semibold inline-flex items-center gap-1 text-red-700 hover:text-red-900"><Trash2 size={13} /> Delete</button>
+                        </div>
+                      ) : <span className="text-xs font-semibold inline-flex items-center gap-0.5" style={{ color: "#1F8A4C" }}>Open <ChevronRight size={13} /></span>}
+                    </td>
                   </tr>
                 );
               })}
@@ -2159,10 +2261,13 @@ function CloseTenancyFlow({ data, unitId, back, onSubmit }) {
 /* ---------------------------------------------------------------------- */
 /* Closed tenancies (archive)                                               */
 /* ---------------------------------------------------------------------- */
-function ArchiveList({ data, openDetail }) {
+function ArchiveList({ data, canEdit, openDetail, onEdit, onDelete }) {
   const [q, setQ] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [deleting, setDeleting] = useState(null);
   const rows = data.archive.filter((a) => !q || `${a.unitCode} ${a.tenant.name} ${a.reasonForLeaving}`.toLowerCase().includes(q.toLowerCase()));
   return (
+    <>
     <div className="pt-2">
       <h1 className="text-xl font-bold mb-1">Closed tenancies</h1>
       <p className="text-sm mb-4" style={{ color: MUTED }}>Every past tenancy, kept exactly as it closed.</p>
@@ -2173,7 +2278,7 @@ function ArchiveList({ data, openDetail }) {
       <div className="rounded-2xl border overflow-hidden bg-white" style={{ borderColor: BORDER }}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead style={{ borderBottom: `1px solid ${BORDER}` }}><tr>{["Unit", "Tenant", "Move-out", "Final Balance", "Deposit", "Refunded", "Reason", "Arrears Outcome"].map((h) => <th key={h} className="text-left px-3 py-2.5 text-xs font-bold whitespace-nowrap" style={{ color: MUTED }}>{h}</th>)}</tr></thead>
+            <thead style={{ borderBottom: `1px solid ${BORDER}` }}><tr>{["Unit", "Tenant", "Move-out", "Final Balance", "Deposit", "Refunded", "Reason", "Arrears Outcome"].map((h) => <th key={h} className="text-left px-3 py-2.5 text-xs font-bold whitespace-nowrap" style={{ color: MUTED }}>{h}</th>)}{canEdit && <th className="text-left px-3 py-2.5 text-xs font-bold whitespace-nowrap" style={{ color: MUTED }}>Actions</th>}</tr></thead>
             <tbody>
               {rows.map((a) => (
                 <tr key={a.id} onClick={() => openDetail(a.id)} className="cursor-pointer hover:bg-black/[0.015]" style={{ borderBottom: `1px solid ${BORDER}` }}>
@@ -2181,14 +2286,60 @@ function ArchiveList({ data, openDetail }) {
                   <td className="px-3 py-2.5 whitespace-nowrap">{fmtDate(a.tenant.moveOutDate)}</td><td className="px-3 py-2.5 tabnum whitespace-nowrap">{kes(a.finalBalance)}</td>
                   <td className="px-3 py-2.5 tabnum whitespace-nowrap">{kes(a.depositHeld)}</td><td className="px-3 py-2.5 tabnum whitespace-nowrap">{kes(a.amountRefunded)}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap">{a.reasonForLeaving || "—"}</td><td className="px-3 py-2.5 whitespace-nowrap">{a.arrearsOutcome}</td>
+                  {canEdit && <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => setEditing(a)} className="text-xs font-semibold inline-flex items-center gap-1" style={{ color: AMBER_DARK }}><Pencil size={13} /> Edit</button>
+                      <button onClick={() => { setDeleting(a); }} className="text-xs font-semibold inline-flex items-center gap-1 text-red-700 hover:text-red-900"><Trash2 size={13} /> Delete</button>
+                    </div>
+                  </td>}
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={8} className="px-3 py-10 text-center text-sm" style={{ color: MUTED }}>No closed tenancies yet.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={canEdit ? 9 : 8} className="px-3 py-10 text-center text-sm" style={{ color: MUTED }}>No closed tenancies yet.</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
     </div>
+      {editing && <EditArchiveModal archive={editing} onClose={() => setEditing(null)} onSubmit={(payload) => { if (onEdit(editing.id, payload)) setEditing(null); }} />}
+      {deleting && <Modal title="Delete closed tenancy?" onClose={() => setDeleting(null)}>
+        <p className="text-sm" style={{ color: MUTED }}>This permanently removes the closed tenancy record from the archive. Its historical transaction snapshot will also be removed.</p>
+        <div className="flex justify-end gap-2 mt-5"><Btn variant="secondary" onClick={() => setDeleting(null)}>Cancel</Btn><Btn variant="danger" onClick={() => { onDelete(deleting.id); setDeleting(null); }}>Delete permanently</Btn></div>
+      </Modal>}
+    </>
+  );
+}
+
+function EditArchiveModal({ archive, onClose, onSubmit }) {
+  const [form, setForm] = useState({
+    name: archive.tenant?.name || "", phone: archive.tenant?.phone || "", email: archive.tenant?.email || "",
+    moveInDate: archive.tenant?.moveInDate || "", moveOutDate: archive.tenant?.moveOutDate || "",
+    depositHeld: archive.depositHeld ?? 0, amountRefunded: archive.amountRefunded ?? 0, amountForfeited: archive.amountForfeited ?? 0,
+    reasonForLeaving: archive.reasonForLeaving || "", arrearsOutcome: archive.arrearsOutcome || "",
+    evictionNoticeDate: archive.evictionNoticeDate || "", evictionLockDate: archive.evictionLockDate || "",
+    tenantNotes: archive.tenant?.notes || "", recoveryNotes: archive.recoveryNotes || "", notes: archive.notes || "",
+  });
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  return (
+    <Modal title={`Edit Closed Tenancy — ${archive.unitCode}`} onClose={onClose} wide>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label="Tenant name"><input value={form.name} onChange={set("name")} className={inputCls} style={inputStyle} /></Field>
+        <Field label="Phone"><input value={form.phone} onChange={set("phone")} className={inputCls} style={inputStyle} /></Field>
+        <Field label="Email"><input type="email" value={form.email} onChange={set("email")} className={inputCls} style={inputStyle} /></Field>
+        <Field label="Move-in date"><input type="date" value={form.moveInDate} onChange={set("moveInDate")} className={inputCls} style={inputStyle} /></Field>
+        <Field label="Move-out date"><input type="date" value={form.moveOutDate} onChange={set("moveOutDate")} className={inputCls} style={inputStyle} /></Field>
+        <Field label="Deposit held"><input type="number" min="0" value={form.depositHeld} onChange={set("depositHeld")} className={inputCls} style={inputStyle} /></Field>
+        <Field label="Amount refunded"><input type="number" min="0" value={form.amountRefunded} onChange={set("amountRefunded")} className={inputCls} style={inputStyle} /></Field>
+        <Field label="Amount forfeited"><input type="number" min="0" value={form.amountForfeited} onChange={set("amountForfeited")} className={inputCls} style={inputStyle} /></Field>
+        <Field label="Reason for leaving"><input value={form.reasonForLeaving} onChange={set("reasonForLeaving")} className={inputCls} style={inputStyle} /></Field>
+        <Field label="Arrears outcome"><input value={form.arrearsOutcome} onChange={set("arrearsOutcome")} className={inputCls} style={inputStyle} /></Field>
+        <Field label="Eviction notice date"><input type="date" value={form.evictionNoticeDate} onChange={set("evictionNoticeDate")} className={inputCls} style={inputStyle} /></Field>
+        <Field label="Eviction lock date"><input type="date" value={form.evictionLockDate} onChange={set("evictionLockDate")} className={inputCls} style={inputStyle} /></Field>
+      </div>
+      <Field label="Tenant notes"><textarea value={form.tenantNotes} onChange={set("tenantNotes")} className={inputCls} style={inputStyle} rows={2} /></Field>
+      <Field label="Recovery notes / case reference"><textarea value={form.recoveryNotes} onChange={set("recoveryNotes")} className={inputCls} style={inputStyle} rows={2} /></Field>
+      <Field label="Notes"><textarea value={form.notes} onChange={set("notes")} className={inputCls} style={inputStyle} rows={2} /></Field>
+      <div className="flex justify-end gap-2 mt-4"><Btn variant="secondary" onClick={onClose}>Cancel</Btn><Btn onClick={() => onSubmit(form)}>Save Changes</Btn></div>
+    </Modal>
   );
 }
 function ArchiveDetail({ data, archiveId, back }) {
