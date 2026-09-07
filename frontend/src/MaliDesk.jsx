@@ -330,13 +330,31 @@ function Sidebar({ screen, go, role, onLogout }) {
       style={{ background: SIDEBAR, width: 260, height: "100vh" }}
     >
       <div className="px-5 pt-6 pb-5">
-        <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm" style={{ background: AMBER, color: SIDEBAR }}>MD</div>
-          <div>
-            <div className="text-white font-bold text-[15px] leading-tight">MaliDesk</div>
-            <div className="text-[10px] font-bold tracking-wider" style={{ color: "#9FC2B4" }}>RENTAL OPERATIONS</div>
+        <button
+          type="button"
+          onClick={() => go("overview")}
+          aria-label="Go to MaliDesk Home dashboard"
+          className="w-full text-left rounded-2xl p-2 -m-2 transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#1A3C34]"
+          style={{ focusRingColor: AMBER }}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+              style={{ background: AMBER, color: SIDEBAR }}
+            >
+              <svg viewBox="0 0 64 64" width="27" height="27" aria-hidden="true">
+                <path d="M16 18h9v28h-9zM39 18h9v28h-9zM25 28h14v8H25z" fill="currentColor" />
+                <circle cx="32" cy="14" r="3" fill="currentColor" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[17px] font-bold leading-tight">
+                <span className="text-white">Mali</span><span style={{ color: AMBER }}>Desk</span>
+              </div>
+              <div className="text-[10px] font-bold tracking-[0.16em] mt-0.5" style={{ color: "#9FC2B4" }}>RENTAL OPERATIONS</div>
+            </div>
           </div>
-        </div>
+        </button>
       </div>
 
       <div className="px-5 mt-2">
@@ -1359,11 +1377,6 @@ function MaliDeskCore({ auth }) {
 function Overview({ rows, data, canEdit, openUnit, goUnits, onExport, onQuickAction }) {
   const occupied = rows.filter((r) => r.unit.occupancyStatus !== "vacant");
   const vacant = rows.filter((r) => r.unit.occupancyStatus === "vacant");
-  const expected = rows.reduce((s, r) => s + r.unit.rent + r.unit.garbage, 0);
-  const collectedThisMonth = data.transactions.filter((t) => t.type === "payment" && t.month === monthOf(todayISO())).reduce((s, t) => s + t.paymentReceived, 0);
-  const totalArrears = rows.reduce((s, r) => s + Math.max(r.balance, 0), 0);
-  const inArrears = occupied.filter((r) => r.balance > 0).length;
-  const pct = expected ? Math.round((collectedThisMonth / expected) * 100) : 0;
 
   const attention = rows.filter((r) => r.priority.key === "HIGH" || r.priority.key === "MEDIUM" || r.priority.key === "LOW").sort((a, b) => b.rank - a.rank || b.balance - a.balance).slice(0, 6);
 
@@ -1389,28 +1402,6 @@ function Overview({ rows, data, canEdit, openUnit, goUnits, onExport, onQuickAct
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-        <Card>
-          <div className="text-xs font-bold tracking-wide mb-2" style={{ color: MUTED }}>EXPECTED THIS MONTH</div>
-          <div className="text-2xl font-bold tabnum">{kes(expected)}</div>
-          <div className="text-xs mt-1" style={{ color: MUTED }}>Across current units</div>
-        </Card>
-        <Card tone="green">
-          <div className="text-xs font-bold tracking-wide mb-2" style={{ color: "#1F8A4C" }}>COLLECTED THIS MONTH</div>
-          <div className="text-2xl font-bold tabnum" style={{ color: "#166534" }}>{kes(collectedThisMonth)}</div>
-          <div className="text-xs mt-1" style={{ color: "#1F8A4C" }}>{pct}% of expected</div>
-        </Card>
-        <Card tone="red">
-          <div className="text-xs font-bold tracking-wide mb-2" style={{ color: "#C0392B" }}>OUTSTANDING BALANCE</div>
-          <div className="text-2xl font-bold tabnum" style={{ color: "#9C2A20" }}>{kes(totalArrears)}</div>
-          <div className="text-xs mt-1" style={{ color: "#C0392B" }}>{inArrears} tenant{inArrears === 1 ? "" : "s"} need follow-up</div>
-        </Card>
-        <Card tone="amber">
-          <div className="text-xs font-bold tracking-wide mb-2" style={{ color: AMBER_DARK }}>OCCUPANCY</div>
-          <div className="text-2xl font-bold tabnum" style={{ color: "#7A5A17" }}>{occupied.length}/{rows.length}</div>
-          <div className="text-xs mt-1" style={{ color: AMBER_DARK }}>{vacant.length} unit{vacant.length === 1 ? "" : "s"} currently vacant</div>
-        </Card>
-      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2">
