@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Search, Bell, Settings, ChevronRight, ChevronDown, ChevronUp, Plus, X,
+  Building2, Menu,
   ArrowLeft, Printer, AlertTriangle, Wallet, Users, DoorClosed, CircleDollarSign,
   Home, ListChecks, Archive as ArchiveIcon, UploadCloud, Download, FileSpreadsheet,
   FileDown, Circle, Filter, HelpCircle, MoreVertical, Pencil, Trash2, Lock, LogOut, ShieldCheck, UserPlus,
@@ -322,6 +323,22 @@ const NAV_ITEMS = [
   { key: "users", label: "Users & access", icon: Users, adminOnly: true },
 ];
 
+function MaliDeskBrand({ onClick, compact = false }) {
+  return (
+    <button type="button" onClick={onClick} aria-label="Go to MaliDesk Home" className={`w-full text-left rounded-xl hover:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-amber-300/40 ${compact ? "p-0.5" : "p-1.5"}`}>
+      <div className="flex items-center gap-2.5">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: AMBER, color: SIDEBAR }}>
+          <Building2 size={21} strokeWidth={2.2} />
+        </div>
+        <div className="min-w-0">
+          <div className="font-bold text-[15px] leading-tight"><span className="text-white">Mali</span><span style={{ color: AMBER }}>Desk</span></div>
+          <div className="text-[10px] font-bold tracking-wider" style={{ color: "#9FC2B4" }}>RENTAL OPERATIONS</div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 function Sidebar({ screen, go, role, onLogout }) {
   const initials = role === "Owner/Admin" ? "OA" : role === "Manager" ? "MG" : "RO";
   return (
@@ -330,31 +347,7 @@ function Sidebar({ screen, go, role, onLogout }) {
       style={{ background: SIDEBAR, width: 260, height: "100vh" }}
     >
       <div className="px-5 pt-6 pb-5">
-        <button
-          type="button"
-          onClick={() => go("overview")}
-          aria-label="Go to MaliDesk Home dashboard"
-          className="w-full text-left rounded-2xl p-2 -m-2 transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#1A3C34]"
-          style={{ focusRingColor: AMBER }}
-        >
-          <div className="flex items-center gap-3">
-            <div
-              className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
-              style={{ background: AMBER, color: SIDEBAR }}
-            >
-              <svg viewBox="0 0 64 64" width="27" height="27" aria-hidden="true">
-                <path d="M16 18h9v28h-9zM39 18h9v28h-9zM25 28h14v8H25z" fill="currentColor" />
-                <circle cx="32" cy="14" r="3" fill="currentColor" />
-              </svg>
-            </div>
-            <div className="min-w-0">
-              <div className="text-[17px] font-bold leading-tight">
-                <span className="text-white">Mali</span><span style={{ color: AMBER }}>Desk</span>
-              </div>
-              <div className="text-[10px] font-bold tracking-[0.16em] mt-0.5" style={{ color: "#9FC2B4" }}>RENTAL OPERATIONS</div>
-            </div>
-          </div>
-        </button>
+        <MaliDeskBrand onClick={() => go("overview")} />
       </div>
 
       <div className="px-5 mt-2">
@@ -368,7 +361,7 @@ function Sidebar({ screen, go, role, onLogout }) {
               key={item.key}
               onClick={() => go(item.key)}
               className="flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold text-left transition-colors"
-              style={{ background: active ? SIDEBAR_ACTIVE : "transparent", color: active ? SIDEBAR : "#B9CCC3" }}
+              style={{ background: active ? AMBER : "transparent", color: active ? SIDEBAR : "#B9CCC3" }}
             >
               <span className="flex items-center gap-2.5"><item.icon size={16} />{item.label}</span>
               {active && <ChevronRight size={14} />}
@@ -395,18 +388,29 @@ function Sidebar({ screen, go, role, onLogout }) {
 }
 
 function MobileNav({ screen, go, role }) {
+  const [open, setOpen] = useState(false);
+  const items = NAV_ITEMS.filter((item) => !item.adminOnly || role === "Owner/Admin");
+  const navigate = (key) => { go(key); setOpen(false); };
   return (
-    <div className="sticky top-0 z-30 flex items-center gap-1 px-2 py-2 overflow-x-auto" style={{ background: SIDEBAR }}>
-      {NAV_ITEMS.filter((item) => !item.adminOnly || role === "Owner/Admin").map((item) => {
-        const active = screen === item.key;
-        return (
-          <button key={item.key} onClick={() => go(item.key)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap"
-            style={{ background: active ? SIDEBAR_ACTIVE : "transparent", color: active ? SIDEBAR : "#B9CCC3" }}>
-            <item.icon size={13} />{item.label}
-          </button>
-        );
-      })}
-    </div>
+    <>
+      <div className="sticky top-0 z-40 flex items-center justify-between gap-2 px-3 py-2.5" style={{ background: SIDEBAR }}>
+        <div className="flex-1 min-w-0"><MaliDeskBrand compact onClick={() => navigate("overview")} /></div>
+        <button type="button" onClick={() => setOpen(v => !v)} aria-label={open ? "Close navigation" : "Open navigation"} className="p-2 rounded-xl shrink-0" style={{ background: open ? AMBER : "transparent", color: open ? SIDEBAR : "#fff" }}><Menu size={21} /></button>
+      </div>
+      {open && <div className="fixed inset-0 z-50" onClick={() => setOpen(false)}>
+        <div className="absolute inset-0 bg-black/30" />
+        <div className="absolute left-0 top-0 bottom-0 w-[min(86vw,300px)] p-4 shadow-2xl overflow-y-auto" style={{ background: SIDEBAR }} onClick={e => e.stopPropagation()}>
+          <MaliDeskBrand onClick={() => navigate("overview")} />
+          <div className="text-[10px] font-bold tracking-wider mt-7 mb-2 px-1" style={{ color: "#7FA396" }}>WORKSPACE</div>
+          <nav className="flex flex-col gap-1">
+            {items.map(item => {
+              const active = screen === item.key || (screen === "unit" && item.key === "units") || (screen === "statement" && item.key === "units") || (screen === "close" && item.key === "units") || (screen === "archiveDetail" && item.key === "archive");
+              return <button key={item.key} type="button" onClick={() => navigate(item.key)} className="flex items-center justify-between px-3 py-3 rounded-xl text-sm font-semibold text-left" style={{ background: active ? AMBER : "transparent", color: active ? SIDEBAR : "#B9CCC3" }}><span className="flex items-center gap-2.5"><item.icon size={17} />{item.label}</span>{active && <ChevronRight size={14} />}</button>;
+            })}
+          </nav>
+        </div>
+      </div>}
+    </>
   );
 }
 
@@ -547,7 +551,7 @@ function MaliDeskCore({ auth }) {
 
   const showToast = useCallback((msg) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 2600);
+    setTimeout(() => setToast(null), 3500);
   }, []);
 
   const rows = useMemo(() => {
@@ -925,23 +929,13 @@ function MaliDeskCore({ auth }) {
 
 
   function deleteUnit(unitId) {
-    if (!canEdit) return false;
+    if (!canEdit) { showToast("You do not have permission to delete units."); return false; }
     const unit = data.units.find((u) => u.id === unitId);
     if (!unit) { showToast("That unit could not be found."); return false; }
-    const tenant = data.tenants.find((t) => t.id === unit.currentTenantId);
+    if (unit.occupancyStatus !== "vacant" || unit.currentTenantId) { showToast("Only vacant units can be deleted."); return false; }
     const txnCount = data.transactions.filter((t) => t.unitId === unitId).length;
-    setData((d) => ({
-      ...d,
-      units: d.units.filter((u) => u.id !== unitId),
-      tenants: d.tenants.filter((t) => t.id !== unit.currentTenantId),
-      transactions: d.transactions.filter((t) => t.unitId !== unitId),
-      auditLog: [...d.auditLog, audit("DELETE", "unit", unitId, {
-        unitCode: unit.code,
-        tenantId: unit.currentTenantId || null,
-        tenantName: tenant?.name || null,
-        transactionCount: txnCount,
-      })],
-    }));
+    if (!window.confirm(`Delete vacant unit ${unit.code}? This action cannot be undone.`)) return false;
+    setData((d) => ({ ...d, units: d.units.filter((u) => u.id !== unitId), transactions: d.transactions.filter((t) => t.unitId !== unitId), auditLog: [...d.auditLog, audit("DELETE", "unit", unitId, { unitCode: unit.code, transactionCount: txnCount })] }));
     showToast(`Unit ${unit.code} deleted successfully.`);
     go("units");
     return true;
@@ -1349,7 +1343,7 @@ function MaliDeskCore({ auth }) {
             <ArchiveDetail data={data} archiveId={view.archiveId} back={() => go("archive")} />
           )}
           {view.screen === "users" && role === "Owner/Admin" && (
-            <UserManagement auth={auth} />
+            <UserManagement auth={auth} showToast={showToast} />
           )}
           {view.screen === "importexport" && (
             <ImportExport
@@ -1363,7 +1357,7 @@ function MaliDeskCore({ auth }) {
         <QuickActionModal data={data} onClose={() => setQuickOpen(false)} onGo={(unitId, action) => { setQuickOpen(false); go("unit", { unitId }); }} />
       )}
       {toast && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-black text-white text-sm px-4 py-2.5 rounded-full shadow-lg z-50">
+        <div className="fixed top-4 right-4 max-w-[min(92vw,380px)] bg-black text-white text-sm px-4 py-3 rounded-xl shadow-lg z-[70]">
           {toast}
         </div>
       )}
@@ -1523,6 +1517,8 @@ function UnitsScreen({ rows, data, canEdit, openUnit, initialQuery, goImportExpo
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [sort, setSort] = useState({ key: "unit", dir: "asc" });
   const [addUnitOpen, setAddUnitOpen] = useState(false);
+  const [deleteUnitOpen, setDeleteUnitOpen] = useState(false);
+  const [deleteUnitId, setDeleteUnitId] = useState("");
 
   const filtered = rows.filter((r) => {
     if (typeFilter !== "all" && r.unit.type !== typeFilter) return false;
@@ -1567,7 +1563,7 @@ function UnitsScreen({ rows, data, canEdit, openUnit, initialQuery, goImportExpo
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold rounded-full px-3 py-1.5" style={{ background: "#EFEAE0", color: MUTED }}>{filtered.length} of {rows.length} units</span>
           <Btn variant="secondary" size="sm" icon={Filter} onClick={reset}>Reset</Btn>
-          {canEdit && <Btn size="sm" onClick={() => setAddUnitOpen(true)}>+ Add Unit</Btn>}
+          {canEdit && <><Btn size="sm" onClick={() => setAddUnitOpen(true)}>+ Add Unit</Btn><Btn size="sm" variant="danger" icon={Trash2} onClick={() => { setDeleteUnitId(""); setDeleteUnitOpen(true); }}>Delete Unit</Btn></>}
         </div>
       </div>
 
@@ -1628,12 +1624,7 @@ function UnitsScreen({ rows, data, canEdit, openUnit, initialQuery, goImportExpo
                     <td className="px-3 py-3"><Pill label={r.priority.key === "HIGH" ? "In Arrears" : r.priority.key === "PAID" ? "Up To Date" : r.priority.key === "VACANT" ? "Vacant" : "Review"} colorKey={r.priority.key} /></td>
                     <td className="px-3 py-3 whitespace-nowrap" style={{ color: MUTED }}>{r.priority.action}</td>
                     <td className="px-3 py-3 whitespace-nowrap text-right">
-                      {canEdit ? (
-                        <div className="flex items-center justify-end gap-2">
-                          <button onClick={(e) => { e.stopPropagation(); openUnit(r.unit.id); }} className="text-xs font-semibold inline-flex items-center gap-0.5" style={{ color: "#1F8A4C" }}>Open <ChevronRight size={13} /></button>
-                          <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete unit ${r.unit.code}? This will also remove its current tenant and transaction history. This cannot be undone.`)) onDeleteUnit(r.unit.id); }} className="text-xs font-semibold inline-flex items-center gap-1 text-red-700 hover:text-red-900"><Trash2 size={13} /> Delete</button>
-                        </div>
-                      ) : <span className="text-xs font-semibold inline-flex items-center gap-0.5" style={{ color: "#1F8A4C" }}>Open <ChevronRight size={13} /></span>}
+                      <button onClick={(e) => { e.stopPropagation(); openUnit(r.unit.id); }} className="text-xs font-semibold inline-flex items-center gap-0.5" style={{ color: "#1F8A4C" }}>Open <ChevronRight size={13} /></button>
                     </td>
                   </tr>
                 );
@@ -1648,6 +1639,16 @@ function UnitsScreen({ rows, data, canEdit, openUnit, initialQuery, goImportExpo
         <button onClick={goImportExport} className="text-xs font-semibold shrink-0" style={{ color: "#1F8A4C" }}>Import history</button>
       </div>
       {!canEdit && <p className="text-xs mt-3" style={{ color: MUTED }}>Viewing as Read-only — actions are hidden.</p>}
+      {deleteUnitOpen && (
+        <Modal title="Delete Unit" onClose={() => setDeleteUnitOpen(false)}>
+          <p className="text-sm mb-4" style={{ color: MUTED }}>For safety, only vacant units can be deleted. Occupied or active units are blocked.</p>
+          <Field label="Select unit"><select value={deleteUnitId} onChange={e => setDeleteUnitId(e.target.value)} className={inputCls} style={inputStyle}>
+            <option value="">Choose a unit…</option>{rows.map(r => <option key={r.unit.id} value={r.unit.id}>{r.unit.code} — {r.unit.occupancyStatus === "vacant" ? "Vacant" : "Occupied / Active"}</option>)}
+          </select></Field>
+          {deleteUnitId && rows.find(r => r.unit.id === deleteUnitId)?.unit.occupancyStatus !== "vacant" && <div className="text-sm text-red-700 bg-red-50 rounded-xl p-3 mb-4">Only vacant units can be deleted.</div>}
+          <div className="flex justify-end gap-2"><Btn variant="secondary" onClick={() => setDeleteUnitOpen(false)}>Cancel</Btn><Btn variant="danger" disabled={!deleteUnitId} onClick={() => { if (onDeleteUnit(deleteUnitId)) setDeleteUnitOpen(false); }}>Delete Unit</Btn></div>
+        </Modal>
+      )}
       {addUnitOpen && (
         <AddUnitModal
           data={data}
@@ -2534,7 +2535,7 @@ function ChangePasswordScreen({ auth, forced=false }) {
   return <div className="min-h-screen flex items-center justify-center p-5" style={{background:BEIGE,color:INK}}><div className="w-full max-w-md rounded-3xl border bg-white p-7 shadow-sm" style={{borderColor:BORDER}}><div className="flex items-center gap-3 mb-6"><div className="w-12 h-12 rounded-2xl flex items-center justify-center font-bold" style={{background:AMBER,color:SIDEBAR}}>MD</div><div><div className="text-xl font-bold">Change password</div><div className="text-[10px] font-bold tracking-wider" style={{color:MUTED}}>ACCOUNT SECURITY</div></div></div>{forced&&<div className="rounded-xl p-3 mb-4 text-sm bg-amber-50" style={{color:AMBER_DARK}}>Your account has a temporary password. You must change it before continuing.</div>}<form onSubmit={submit}><Field label="Current password"><input type="password" autoComplete="current-password" value={currentPassword} onChange={e=>setCurrentPassword(e.target.value)} className={inputCls} style={inputStyle} required /></Field><Field label="New password" hint="At least 8 characters with upper, lower and number."><input type="password" autoComplete="new-password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} className={inputCls} style={inputStyle} required /></Field><Field label="Confirm new password"><input type="password" autoComplete="new-password" value={confirm} onChange={e=>setConfirm(e.target.value)} className={inputCls} style={inputStyle} required /></Field>{error&&<div className="text-xs text-red-700 bg-red-50 rounded-xl p-3 mb-4">{error}</div>}<button disabled={busy} className="w-full rounded-xl py-2.5 text-sm font-bold disabled:opacity-50" style={{background:SIDEBAR,color:"white"}}>{busy?"Saving…":"Change password"}</button></form><button className="w-full mt-3 text-xs font-semibold" style={{color:MUTED}} onClick={auth.logout}>Sign out</button></div></div>;
 }
 
-function UserManagement({ auth }) {
+function UserManagement({ auth, showToast }) {
   const emptyForm = { fullName: "", username: "", email: "", role: "Viewer", status: "active", password: "" };
   const [users, setUsers] = useState([]); const [open, setOpen] = useState(false); const [editing, setEditing] = useState(null); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [success, setSuccess] = useState(""); const [form, setForm] = useState(emptyForm);
   const roleDescriptions = [["Administrator", "Full access"],["Manager", "Can manage units, tenants, payments, reports, etc."],["Staff", "Limited operational access"],["Viewer", "Read-only access"]];
@@ -2542,7 +2543,23 @@ function UserManagement({ auth }) {
   useEffect(() => { load(); }, [load]);
   const openCreate = () => { setEditing(null); setForm(emptyForm); setError(""); setSuccess(""); setOpen(true); };
   const openEdit = (u) => { setEditing(u); setForm({ fullName:u.full_name||"", username:u.username||"", email:u.email||"", role:u.role||"Viewer", status:u.status||"active", password:"" }); setError(""); setSuccess(""); setOpen(true); };
-  const save = async (e) => { e.preventDefault(); setBusy(true); setError(""); setSuccess(""); try { if (editing) await authApi(`/api/users/${editing.id}`, {method:"PATCH", body:JSON.stringify(form)}); else await authApi("/api/users", {method:"POST", body:JSON.stringify(form)}); setOpen(false); setEditing(null); setForm(emptyForm); await load(); setSuccess(editing ? "User updated successfully." : "User created successfully."); } catch(e) { setError(e.message || (editing ? "Unable to update user." : "Unable to create user.")); } finally { setBusy(false); } };
+  const save = async (e) => {
+    e?.preventDefault?.();
+    if (busy) return;
+    setBusy(true); setError(""); setSuccess("");
+    const payload = { ...form, fullName: String(form.fullName || "").trim(), username: String(form.username || "").trim(), email: String(form.email || "").trim() };
+    if (!payload.fullName || !payload.username || (!editing && !payload.password)) { setError("Full name, username and password are required."); setBusy(false); return; }
+    if (!editing && (payload.password.length < 8 || !/[a-z]/.test(payload.password) || !/[A-Z]/.test(payload.password) || !/[0-9]/.test(payload.password))) { setError("Password must be at least 8 characters and include upper, lower and number."); setBusy(false); return; }
+    try {
+      const result = editing ? await authApi(`/api/users/${editing.id}`, {method:"PATCH", body:JSON.stringify(payload)}) : await authApi("/api/users", {method:"POST", body:JSON.stringify(payload)});
+      if (!result) throw new Error("The server did not confirm the user request.");
+      const wasEditing = Boolean(editing);
+      setOpen(false); setEditing(null); setForm(emptyForm); await load();
+      const message = wasEditing ? "User updated successfully." : "User created successfully.";
+      setSuccess(message);
+      showToast(message);
+    } catch(e) { const message = e.message || (editing ? "Unable to update user." : "Unable to create user."); setError(message); showToast(message); } finally { setBusy(false); }
+  };
   const toggle = async (u) => { setError(""); setSuccess(""); try { await authApi(`/api/users/${u.id}/status`, {method:"PATCH", body:JSON.stringify({status:u.status === "active" ? "inactive" : "active"})}); await load(); setSuccess(`User ${u.status === "active" ? "deactivated" : "activated"} successfully.`); } catch(e) { setError(e.message || "Unable to update status."); } };
   return <div className="pt-2">
     <div className="flex items-start justify-between gap-3 mb-5"><div><div className="text-[11px] font-bold tracking-wide" style={{color:MUTED}}>SECURITY</div><h1 className="text-xl font-bold">Users & access</h1><p className="text-sm" style={{color:MUTED}}>Manage accounts, roles and access status.</p></div><Btn icon={UserPlus} onClick={openCreate}>Add User</Btn></div>
