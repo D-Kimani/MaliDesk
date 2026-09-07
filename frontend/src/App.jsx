@@ -2250,7 +2250,7 @@ function ImportExport({ data, onImport, onExportExcel, onExportCSV, showColumns 
 /* Production authentication shell                                         */
 /* ---------------------------------------------------------------------- */
 const authApi = async (path, options = {}) => {
-  const res = await fetch(path, { credentials: "include", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
+  const res = await fetch(`${AUTH_API_BASE}${path}`, { credentials: "include", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || "Request failed");
   return body;
