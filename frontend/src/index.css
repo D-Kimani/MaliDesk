@@ -35,3 +35,17 @@ button:disabled {
 
 /* Small compatibility layer for the utility-heavy original MaliDesk JSX. */
 .tabnum { font-variant-numeric: tabular-nums; }
+
+/* A statement PDF is a document, not an application screenshot. */
+@media print {
+  html, body, #root { min-height: 0 !important; background: #fff !important; }
+  #root > div { display: block !important; min-height: 0 !important; }
+  #root > div > aside,
+  #root > div > div:not(.flex-1),
+  #root > div > .flex-1 > div:first-child { display: none !important; }
+  #root > div > .flex-1 { display: block !important; }
+  #root main { padding: 0 !important; }
+  #root main > * { display: none !important; }
+  #root main > .tenant-statement-print { display: block !important; }
+  .tenant-statement-print .rounded-2xl { border: 0 !important; border-radius: 0 !important; padding: 0 !important; }
+}

@@ -1254,9 +1254,70 @@ function MaliDeskCore({ auth }) {
   }
   async function exportExcel() {
     try {
+      // Export from the authoritative store at the instant the user clicks
+      // Download. The screen may have an older local snapshot.
+      const remote = await authApi("/api/data");
+      const currentData = normaliseData(remote.data);
       const response = await fetch("/rental-income-template.xlsx");
       if (!response.ok) throw new Error("Template download failed");
-      const blob = await response.blob();
+
+      // Start with the existing workbook rather than building a replacement.
+      // This retains every sheet, column, style and print setting supplied by
+      // the established Rental Income template.
+      const wb = XLSX.read(await response.arrayBuffer(), { type: "array", cellStyles: true });
+      const templateSheet = wb.Sheets["A1"] || wb.Sheets[wb.SheetNames[0]];
+      const cloneSheet = (sheet) => Object.fromEntries(Object.entries(sheet).map(([key, value]) => [
+        key,
+        Array.isArray(value) ? [...value] : value && typeof value === "object" ? { ...value } : value,
+      ]));
+      const excelDate = (date) => Math.floor((Date.parse(`${date}T00:00:00Z`) - Date.UTC(1899, 11, 30)) / 86400000);
+      const writeCell = (sheet, address, value, type = "s") => {
+        sheet[address] = { ...(sheet[address] || {}), v: value, t: type };
+        delete sheet[address].f;
+        delete sheet[address].w;
+      };
+
+      currentData.units.forEach((unit) => {
+        const sheetName = String(unit.code || "Unit").slice(0, 31);
+        if (!wb.Sheets[sheetName] && templateSheet) XLSX.utils.book_append_sheet(wb, cloneSheet(templateSheet), sheetName);
+        const sheet = wb.Sheets[sheetName];
+        if (!sheet) return;
+        const tenant = currentData.tenants.find((t) => t.id === unit.currentTenantId);
+        const ledger = ledgerWithRunningBalance(currentData.transactions.filter((t) => t.unitId === unit.id));
+
+        // Clear values only in the preformatted ledger area so old template
+        // rows never leak into the new export.
+        for (let row = 6; row <= 208; row++) for (let column = 0; column <= 9; column++) {
+          const address = XLSX.utils.encode_cell({ r: row - 1, c: column });
+          if (sheet[address]) {
+            delete sheet[address].v;
+            delete sheet[address].w;
+            delete sheet[address].f;
+          }
+        }
+
+        writeCell(sheet, "B3", unit.code || "");
+        writeCell(sheet, "D3", Number(unit.rent) || 0, "n");
+        writeCell(sheet, "F3", Number(unit.garbage) || 0, "n");
+        writeCell(sheet, "H3", ledger.length ? ledger[ledger.length - 1].runningBalance : 0, "n");
+        writeCell(sheet, "J3", tenant?.name || "Vacant");
+        writeCell(sheet, "L3", unit.occupancyStatus === "vacant" ? 0 : Number(unit.depositHeld) || 0, "n");
+
+        ledger.slice(0, 203).forEach((transaction, index) => {
+          const row = index + 6;
+          writeCell(sheet, `A${row}`, excelDate(transaction.date), "n");
+          writeCell(sheet, `B${row}`, new Date(`${transaction.date}T00:00:00Z`).toLocaleDateString("en-GB", { month: "long" }));
+          writeCell(sheet, `C${row}`, transaction.description || "");
+          writeCell(sheet, `E${row}`, Number(transaction.rentCharged) || 0, "n");
+          writeCell(sheet, `F${row}`, Number(transaction.garbageCharged) || 0, "n");
+          writeCell(sheet, `G${row}`, Number(transaction.paymentReceived) || 0, "n");
+          writeCell(sheet, `H${row}`, transaction.mpesaRef || "");
+          writeCell(sheet, `I${row}`, transaction.runningBalance, "n");
+          writeCell(sheet, `J${row}`, transaction.remarks || "");
+        });
+      });
+
+      const blob = new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -1265,9 +1326,9 @@ function MaliDeskCore({ auth }) {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      showToast("Rental Income Excel template downloaded");
+      showToast("Current rental data exported to Excel");
     } catch (e) {
-      showToast("Could not download the Rental Income Excel template");
+      showToast("Could not export the current rental data");
     }
   }
   function exportCSV(include) {
@@ -2136,13 +2197,22 @@ function Statement({ data, unitId, back }) {
   const allTxns = data.transactions.filter((t) => t.unitId === unitId);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const filtered = allTxns.filter((t) => (!from || t.date >= from) && (!to || t.date <= to));
-  const ledger = ledgerWithRunningBalance(filtered);
-  const fullLedger = ledgerWithRunningBalance(allTxns);
-  const balance = fullLedger.length ? fullLedger[fullLedger.length - 1].runningBalance : 0;
+  // Capture the statement once when it opens. Date filters only choose which
+  // stored statement rows to show; they never restart a balance calculation
+  // or alter the statement total. Print uses these exact rendered rows too.
+  const [statement] = useState(() => {
+    const ledger = ledgerWithRunningBalance(allTxns);
+    return {
+      unit: { ...unit },
+      tenant: tenant ? { ...tenant } : null,
+      ledger,
+      balance: ledger.length ? ledger[ledger.length - 1].runningBalance : 0,
+    };
+  });
+  const ledger = statement.ledger.filter((t) => (!from || t.date >= from) && (!to || t.date <= to));
 
   return (
-    <div className="pt-2">
+    <div className="pt-2 tenant-statement-print">
       <div className="flex items-center justify-between mb-3 print:hidden">
         <button onClick={back} className="flex items-center gap-1 text-sm font-semibold" style={{ color: MUTED }}><ArrowLeft size={15} /> Back</button>
         <Btn icon={Printer} onClick={() => window.print()}>Print / Save PDF</Btn>
@@ -2151,17 +2221,17 @@ function Statement({ data, unitId, back }) {
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="text-xs font-bold uppercase tracking-wide" style={{ color: MUTED }}>Tenant Statement</div>
-            <h1 className="text-lg font-bold">{unit.code}</h1>
+            <h1 className="text-lg font-bold">{statement.unit.code}</h1>
           </div>
           <div style={{ background: SIDEBAR }} className="text-white text-xs font-bold px-3 py-1.5 rounded-lg">MaliDesk</div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 text-sm">
-          <div><div className="text-[11px] font-semibold" style={{ color: MUTED }}>Tenant</div><div className="font-semibold">{tenant?.name}</div></div>
-          <div><div className="text-[11px] font-semibold" style={{ color: MUTED }}>Monthly Rent</div><div className="tabnum">{kes(unit.rent)}</div></div>
-          <div><div className="text-[11px] font-semibold" style={{ color: MUTED }}>Garbage Fee</div><div className="tabnum">{kes(unit.garbage)}</div></div>
-          <div><div className="text-[11px] font-semibold" style={{ color: MUTED }}>Deposit Held</div><div className="tabnum">{kes(unit.depositHeld)}</div></div>
+          <div><div className="text-[11px] font-semibold" style={{ color: MUTED }}>Tenant</div><div className="font-semibold">{statement.tenant?.name}</div></div>
+          <div><div className="text-[11px] font-semibold" style={{ color: MUTED }}>Monthly Rent</div><div className="tabnum">{kes(statement.unit.rent)}</div></div>
+          <div><div className="text-[11px] font-semibold" style={{ color: MUTED }}>Garbage Fee</div><div className="tabnum">{kes(statement.unit.garbage)}</div></div>
+          <div><div className="text-[11px] font-semibold" style={{ color: MUTED }}>Deposit Held</div><div className="tabnum">{kes(statement.unit.depositHeld)}</div></div>
         </div>
-        <div className="mb-4 text-sm"><span className="text-[11px] font-semibold" style={{ color: MUTED }}>Current Balance </span><span className="font-bold tabnum">{kes(balance)}</span></div>
+        <div className="mb-4 text-sm"><span className="text-[11px] font-semibold" style={{ color: MUTED }}>Current Balance </span><span className="font-bold tabnum">{kes(statement.balance)}</span></div>
         <div className="flex items-center gap-2 mb-3 print:hidden">
           <Field label="From"><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={inputCls} style={inputStyle} /></Field>
           <Field label="To"><input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={inputCls} style={inputStyle} /></Field>
