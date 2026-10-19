@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
-  Search, Bell, Settings, ChevronRight, ChevronDown, ChevronUp, Plus, X,
+  Search, Settings, ChevronRight, ChevronDown, ChevronUp, Plus, X,
   Building2, Menu,
   ArrowLeft, Printer, AlertTriangle, Wallet, Users, DoorClosed, CircleDollarSign,
-  Home, ListChecks, Archive as ArchiveIcon, UploadCloud, Download, FileSpreadsheet,
+  Home, ListChecks, Archive as ArchiveIcon, UploadCloud, FileSpreadsheet,
   FileDown, Circle, Filter, HelpCircle, MoreVertical, Pencil, Trash2, Lock, LogOut, ShieldCheck, UserPlus,
 } from "lucide-react";
 import * as XLSX from "xlsx";
@@ -414,7 +414,7 @@ function MobileNav({ screen, go, role }) {
   );
 }
 
-function TopBar({ q, setQ, onSearchEnter, onBackup }) {
+function TopBar({ q, setQ, onSearchEnter }) {
   const [now] = useState(new Date());
   const dateStr = now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   return (
@@ -431,8 +431,6 @@ function TopBar({ q, setQ, onSearchEnter, onBackup }) {
           />
         </div>
         <div className="flex items-center gap-3">
-          <button title="Download backup" onClick={onBackup} className="p-2 rounded-xl bg-white border" style={{ borderColor: BORDER, color: MUTED }}><Download size={16} /></button>
-          <button className="p-2 rounded-xl bg-white border" style={{ borderColor: BORDER, color: MUTED }}><Bell size={16} /></button>
           <div className="hidden sm:block text-right leading-tight">
             <div className="text-xs font-semibold" style={{ color: INK }}>{dateStr}</div>
             <div className="text-[11px]" style={{ color: MUTED }}>EAT · Nairobi</div>
@@ -1285,34 +1283,28 @@ function MaliDeskCore({ auth }) {
         const tenant = currentData.tenants.find((t) => t.id === unit.currentTenantId);
         const ledger = ledgerWithRunningBalance(currentData.transactions.filter((t) => t.unitId === unit.id));
 
-        // Clear values only in the preformatted ledger area so old template
-        // rows never leak into the new export.
-        for (let row = 6; row <= 208; row++) for (let column = 0; column <= 9; column++) {
-          const address = XLSX.utils.encode_cell({ r: row - 1, c: column });
-          if (sheet[address]) {
-            delete sheet[address].v;
-            delete sheet[address].w;
-            delete sheet[address].f;
-          }
-        }
-
         writeCell(sheet, "B3", unit.code || "");
         writeCell(sheet, "D3", Number(unit.rent) || 0, "n");
         writeCell(sheet, "F3", Number(unit.garbage) || 0, "n");
-        writeCell(sheet, "H3", ledger.length ? ledger[ledger.length - 1].runningBalance : 0, "n");
-        writeCell(sheet, "J3", tenant?.name || "Vacant");
-        writeCell(sheet, "L3", unit.occupancyStatus === "vacant" ? 0 : Number(unit.depositHeld) || 0, "n");
-
+        // Clear template sample data without removing formulas from unused rows.
+        for (let row = 6; row <= 208; row++) {
+          for (let column = 0; column < 10; column++) {
+            const address = XLSX.utils.encode_cell({ r: row - 1, c: column });
+            const cell = sheet[address];
+            if (cell && !cell.f) { delete cell.v; delete cell.w; }
+          }
+        }
         ledger.slice(0, 203).forEach((transaction, index) => {
           const row = index + 6;
           writeCell(sheet, `A${row}`, excelDate(transaction.date), "n");
-          writeCell(sheet, `B${row}`, new Date(`${transaction.date}T00:00:00Z`).toLocaleDateString("en-GB", { month: "long" }));
+          writeCell(sheet, `B${row}`, transaction.month ? monthLabel(transaction.month) : "");
           writeCell(sheet, `C${row}`, transaction.description || "");
+          writeCell(sheet, `D${row}`, tenant?.name || "");
           writeCell(sheet, `E${row}`, Number(transaction.rentCharged) || 0, "n");
           writeCell(sheet, `F${row}`, Number(transaction.garbageCharged) || 0, "n");
           writeCell(sheet, `G${row}`, Number(transaction.paymentReceived) || 0, "n");
           writeCell(sheet, `H${row}`, transaction.mpesaRef || "");
-          writeCell(sheet, `I${row}`, transaction.runningBalance, "n");
+          writeCell(sheet, `I${row}`, Number(transaction.runningBalance) || 0, "n");
           writeCell(sheet, `J${row}`, transaction.remarks || "");
         });
       });
@@ -1356,18 +1348,6 @@ function MaliDeskCore({ auth }) {
           q={topQ}
           setQ={setTopQ}
           onSearchEnter={() => go("units")}
-          onBackup={() => {
-            const blob = new Blob([JSON.stringify({ ...normaliseData(data), exportedAt: new Date().toISOString(), app: "MaliDesk" }, null, 2)], { type: "application/json" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `malidesk-backup-${todayISO()}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            showToast("Backup downloaded");
-          }}
         />
         <main className="px-4 sm:px-8 pb-16 pt-1">
           {view.screen === "overview" && (
@@ -2516,8 +2496,9 @@ function ImportExport({ data, onImport, onExportExcel, onExportCSV, showColumns 
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="text-xs" style={{ color: MUTED }}>{selectedCount} record{selectedCount === 1 ? "" : "s"} selected</div>
             <div className="flex gap-2 flex-wrap">
-              <Btn icon={FileDown} onClick={() => onExportCSV(include)}>Download CSV</Btn>
-              <Btn variant="secondary" icon={FileSpreadsheet} onClick={onExportExcel}>Download Excel</Btn>
+              <button type="button" onClick={() => onExportExcel(include)} className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-offset-2" style={{ backgroundColor: "#1F8A4C", border: "1px solid #1F8A4C" }}>
+                <FileSpreadsheet size={16} /> Download Excel
+              </button>
             </div>
           </div>
         </div>
