@@ -3,8 +3,7 @@ import {
   Search, Settings, ChevronRight, ChevronDown, ChevronUp, Plus, X,
   Building2, Menu,
   ArrowLeft, Printer, AlertTriangle, Wallet, Users, DoorClosed, CircleDollarSign,
-  Home, ListChecks, Archive as ArchiveIcon, UploadCloud, FileSpreadsheet,
-  FileDown, Circle, Filter, HelpCircle, MoreVertical, Pencil, Trash2, Lock, LogOut, ShieldCheck, UserPlus,
+  Home, ListChecks, Archive as ArchiveIcon, UploadCloud, FileSpreadsheet, Circle, Filter, HelpCircle, MoreVertical, Pencil, Trash2, Lock, LogOut, ShieldCheck, UserPlus,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -1283,28 +1282,34 @@ function MaliDeskCore({ auth }) {
         const tenant = currentData.tenants.find((t) => t.id === unit.currentTenantId);
         const ledger = ledgerWithRunningBalance(currentData.transactions.filter((t) => t.unitId === unit.id));
 
+        // Clear only sample values in the preformatted ledger area. Formula cells,
+        // styles, data validation and the template's calculated running balances remain.
+        for (let row = 6; row <= 208; row++) for (let column = 0; column <= 9; column++) {
+          const address = XLSX.utils.encode_cell({ r: row - 1, c: column });
+          const cell = sheet[address];
+          if (cell && !cell.f) { delete cell.v; delete cell.w; }
+        }
+
+        // These are the template's actual input cells. G3, H3 and J3 are
+        // calculated by the template and must not be replaced with static values.
         writeCell(sheet, "B3", unit.code || "");
         writeCell(sheet, "D3", Number(unit.rent) || 0, "n");
         writeCell(sheet, "F3", Number(unit.garbage) || 0, "n");
-        // Clear template sample data without removing formulas from unused rows.
-        for (let row = 6; row <= 208; row++) {
-          for (let column = 0; column < 10; column++) {
-            const address = XLSX.utils.encode_cell({ r: row - 1, c: column });
-            const cell = sheet[address];
-            if (cell && !cell.f) { delete cell.v; delete cell.w; }
-          }
-        }
+
         ledger.slice(0, 203).forEach((transaction, index) => {
           const row = index + 6;
-          writeCell(sheet, `A${row}`, excelDate(transaction.date), "n");
-          writeCell(sheet, `B${row}`, transaction.month ? monthLabel(transaction.month) : "");
+          const date = String(transaction.date || "");
+          const month = date.length >= 7 ? Number(date.slice(5, 7)) : 0;
+          const monthName = month >= 1 && month <= 12 ? ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][month - 1] : "";
+          writeCell(sheet, `A${row}`, excelDate(date), "n");
+          writeCell(sheet, `B${row}`, monthName);
           writeCell(sheet, `C${row}`, transaction.description || "");
           writeCell(sheet, `D${row}`, tenant?.name || "");
           writeCell(sheet, `E${row}`, Number(transaction.rentCharged) || 0, "n");
           writeCell(sheet, `F${row}`, Number(transaction.garbageCharged) || 0, "n");
           writeCell(sheet, `G${row}`, Number(transaction.paymentReceived) || 0, "n");
           writeCell(sheet, `H${row}`, transaction.mpesaRef || "");
-          writeCell(sheet, `I${row}`, Number(transaction.runningBalance) || 0, "n");
+          // Column I's template formula computes the running balance dynamically.
           writeCell(sheet, `J${row}`, transaction.remarks || "");
         });
       });
@@ -1323,17 +1328,7 @@ function MaliDeskCore({ auth }) {
       showToast("Could not export the current rental data");
     }
   }
-  function exportCSV(include) {
-    const wb = buildWorkbook(include);
-    const firstSheet = wb.SheetNames[0];
-    const csv = XLSX.utils.sheet_to_csv(wb.Sheets[firstSheet]);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `malidesk-${firstSheet.toLowerCase().replace(/\s+/g, "-")}-${todayISO()}.csv`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-    showToast(`CSV downloaded (${firstSheet})`);
-  }
+
 
   return (
     <div className={isDesktop ? "min-h-screen flex" : "min-h-screen"} style={{ background: BEIGE, color: INK }}>
@@ -1348,6 +1343,18 @@ function MaliDeskCore({ auth }) {
           q={topQ}
           setQ={setTopQ}
           onSearchEnter={() => go("units")}
+          onBackup={() => {
+            const blob = new Blob([JSON.stringify({ ...normaliseData(data), exportedAt: new Date().toISOString(), app: "MaliDesk" }, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `malidesk-backup-${todayISO()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast("Backup downloaded");
+          }}
         />
         <main className="px-4 sm:px-8 pb-16 pt-1">
           {view.screen === "overview" && (
@@ -1389,7 +1396,7 @@ function MaliDeskCore({ auth }) {
           )}
           {view.screen === "importexport" && (
             <ImportExport
-              data={data} onImport={importWorkbook} onExportExcel={exportExcel} onExportCSV={exportCSV}
+              data={data} onImport={importWorkbook} onExportExcel={exportExcel}
               showColumns={() => showToast("Row 3: unit code, rent, garbage, tenant name, deposit. Row 6+: ledger — date, description, rent charged, garbage charged, payment, M-Pesa ref, remarks.")}
             />
           )}
@@ -2428,7 +2435,7 @@ function ArchiveDetail({ data, archiveId, back }) {
 /* ---------------------------------------------------------------------- */
 /* Import & export                                                          */
 /* ---------------------------------------------------------------------- */
-function ImportExport({ data, onImport, onExportExcel, onExportCSV, showColumns }) {
+function ImportExport({ data, onImport, onExportExcel, showColumns }) {
   const fileRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
   const [include, setInclude] = useState({ units: true, transactions: true, archive: false });
