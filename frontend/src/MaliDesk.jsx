@@ -1325,7 +1325,7 @@ function MaliDeskCore({ auth }) {
           });
           // The statement header identifies the actual unit, not the template unit.
           writeCell(sheet, "B3", unit.code || "");
-          writeCell(sheet, "J3", { formula: `IFERROR(INDEX(Reports!$B$5:$B$19,MATCH("${String(unit.code || "").replace(/"/g, '""')}",Reports!$A$5:$A$19,0)),"")` });
+          writeCell(sheet, "J3", "");
         }
         if (!sheet) continue;
 
