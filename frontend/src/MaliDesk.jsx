@@ -6,6 +6,7 @@ import {
   Home, ListChecks, Archive as ArchiveIcon, UploadCloud, FileSpreadsheet, Circle, Filter, HelpCircle, MoreVertical, Pencil, Trash2, Lock, LogOut, ShieldCheck, UserPlus,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 /* ---------------------------------------------------------------------- */
 /* Design tokens — MaliDesk palette                                        */
@@ -1251,70 +1252,107 @@ function MaliDeskCore({ auth }) {
   }
   async function exportExcel() {
     try {
-      // Export from the authoritative store at the instant the user clicks
-      // Download. The screen may have an older local snapshot.
+      // Export from the authoritative store at the instant the user clicks Download.
       const remote = await authApi("/api/data");
       const currentData = normaliseData(remote.data);
       const response = await fetch("/rental-income-template.xlsx");
       if (!response.ok) throw new Error("Template download failed");
 
-      // Start with the existing workbook rather than building a replacement.
-      // This retains every sheet, column, style and print setting supplied by
-      // the established Rental Income template.
-      const wb = XLSX.read(await response.arrayBuffer(), { type: "array", cellStyles: true });
-      const templateSheet = wb.Sheets["A1"] || wb.Sheets[wb.SheetNames[0]];
-      const cloneSheet = (sheet) => Object.fromEntries(Object.entries(sheet).map(([key, value]) => [
-        key,
-        Array.isArray(value) ? [...value] : value && typeof value === "object" ? { ...value } : value,
-      ]));
-      const excelDate = (date) => Math.floor((Date.parse(`${date}T00:00:00Z`) - Date.UTC(1899, 11, 30)) / 86400000);
-      const writeCell = (sheet, address, value, type = "s") => {
-        sheet[address] = { ...(sheet[address] || {}), v: value, t: type };
-        delete sheet[address].f;
-        delete sheet[address].w;
+      // ExcelJS writes cell styles, formulas, row/column sizing and supported
+      // workbook features. The SheetJS community writer used previously did
+      // not reliably preserve the template's formatting on save.
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(await response.arrayBuffer());
+      workbook.calcProperties = { fullCalcOnLoad: true, forceFullCalc: true, calcMode: "auto" };
+
+      const templateSheet = workbook.getWorksheet("A1") || workbook.worksheets[0];
+      const excelDate = (date) => {
+        const match = String(date || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (!match) return null;
+        const utc = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+        return Math.floor((utc - Date.UTC(1899, 11, 30)) / 86400000);
+      };
+      const hasFormula = (cell) => {
+        const value = cell.value;
+        return !!value && typeof value === "object" && ("formula" in value || "sharedFormula" in value);
+      };
+      const writeCell = (sheet, address, value) => {
+        sheet.getCell(address).value = value == null ? null : value;
       };
 
-      currentData.units.forEach((unit) => {
+      // Keep the workbook's existing sheets and populate the unit ledgers.
+      // Formula cells and their styles are never cleared; blank input cells
+      // retain their original template formatting.
+      for (const unit of currentData.units) {
         const sheetName = String(unit.code || "Unit").slice(0, 31);
-        if (!wb.Sheets[sheetName] && templateSheet) XLSX.utils.book_append_sheet(wb, cloneSheet(templateSheet), sheetName);
-        const sheet = wb.Sheets[sheetName];
-        if (!sheet) return;
+        let sheet = workbook.getWorksheet(sheetName);
+        if (!sheet && templateSheet) {
+          // New units get a ledger based on the template's structure.
+          sheet = workbook.addWorksheet(sheetName);
+          templateSheet.columns.forEach((column, index) => {
+            sheet.getColumn(index + 1).width = column.width;
+            sheet.getColumn(index + 1).hidden = column.hidden;
+          });
+          templateSheet.eachRow({ includeEmpty: true }, (sourceRow, rowNumber) => {
+            const targetRow = sheet.getRow(rowNumber);
+            targetRow.height = sourceRow.height;
+            targetRow.hidden = sourceRow.hidden;
+            sourceRow.eachCell({ includeEmpty: true }, (sourceCell, colNumber) => {
+              const targetCell = targetRow.getCell(colNumber);
+              targetCell.style = structuredClone(sourceCell.style || {});
+              if (sourceCell.value && typeof sourceCell.value === "object" && ("formula" in sourceCell.value || "sharedFormula" in sourceCell.value)) {
+                targetCell.value = structuredClone(sourceCell.value);
+              } else {
+                targetCell.value = sourceCell.value;
+              }
+            });
+          });
+          templateSheet.model.merges.forEach((range) => sheet.mergeCells(range));
+          templateSheet.dataValidations.model && Object.entries(templateSheet.dataValidations.model).forEach(([address, rule]) => {
+            sheet.getCell(address).dataValidation = structuredClone(rule);
+          });
+          // The statement header identifies the actual unit, not the template unit.
+          writeCell(sheet, "B3", unit.code || "");
+          writeCell(sheet, "J3", { formula: `IFERROR(INDEX(Reports!$B$5:$B$19,MATCH("${String(unit.code || "").replace(/"/g, '""')}",Reports!$A$5:$A$19,0)),"")` });
+        }
+        if (!sheet) continue;
+
         const tenant = currentData.tenants.find((t) => t.id === unit.currentTenantId);
         const ledger = ledgerWithRunningBalance(currentData.transactions.filter((t) => t.unitId === unit.id));
 
-        // Clear only sample values in the preformatted ledger area. Formula cells,
-        // styles, data validation and the template's calculated running balances remain.
-        for (let row = 6; row <= 208; row++) for (let column = 0; column <= 9; column++) {
-          const address = XLSX.utils.encode_cell({ r: row - 1, c: column });
-          const cell = sheet[address];
-          if (cell && !cell.f) { delete cell.v; delete cell.w; }
+        for (let row = 6; row <= 208; row++) {
+          for (let column = 1; column <= 10; column++) {
+            const cell = sheet.getRow(row).getCell(column);
+            if (!hasFormula(cell)) cell.value = null;
+          }
         }
 
-        // These are the template's actual input cells. G3, H3 and J3 are
-        // calculated by the template and must not be replaced with static values.
         writeCell(sheet, "B3", unit.code || "");
-        writeCell(sheet, "D3", Number(unit.rent) || 0, "n");
-        writeCell(sheet, "F3", Number(unit.garbage) || 0, "n");
+        writeCell(sheet, "D3", Number(unit.rent) || 0);
+        writeCell(sheet, "F3", Number(unit.garbage) || 0);
 
         ledger.slice(0, 203).forEach((transaction, index) => {
           const row = index + 6;
           const date = String(transaction.date || "");
           const month = date.length >= 7 ? Number(date.slice(5, 7)) : 0;
-          const monthName = month >= 1 && month <= 12 ? ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][month - 1] : "";
-          writeCell(sheet, `A${row}`, excelDate(date), "n");
+          const monthName = month >= 1 && month <= 12
+            ? ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][month - 1]
+            : "";
+          writeCell(sheet, `A${row}`, excelDate(date));
           writeCell(sheet, `B${row}`, monthName);
           writeCell(sheet, `C${row}`, transaction.description || "");
           writeCell(sheet, `D${row}`, tenant?.name || "");
-          writeCell(sheet, `E${row}`, Number(transaction.rentCharged) || 0, "n");
-          writeCell(sheet, `F${row}`, Number(transaction.garbageCharged) || 0, "n");
-          writeCell(sheet, `G${row}`, Number(transaction.paymentReceived) || 0, "n");
+          writeCell(sheet, `E${row}`, Number(transaction.rentCharged) || 0);
+          writeCell(sheet, `F${row}`, Number(transaction.garbageCharged) || 0);
+          writeCell(sheet, `G${row}`, Number(transaction.paymentReceived) || 0);
           writeCell(sheet, `H${row}`, transaction.mpesaRef || "");
-          // Column I's template formula computes the running balance dynamically.
+          // Column I is the template's formula-driven running balance.
           writeCell(sheet, `J${row}`, transaction.remarks || "");
         });
-      });
+      }
 
-      const blob = new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -1323,9 +1361,10 @@ function MaliDeskCore({ auth }) {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      showToast("Current rental data exported to Excel");
+      showToast("Current rental data exported using the Excel template");
     } catch (e) {
-      showToast("Could not export the current rental data");
+      console.error("MaliDesk Excel export failed:", e);
+      showToast("Could not export the current rental data. Please try again.");
     }
   }
 
