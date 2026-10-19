@@ -1252,11 +1252,23 @@ function MaliDeskCore({ auth }) {
   }
   async function exportExcel() {
     try {
-      // Export from the authoritative store at the instant the user clicks Download.
-      const remote = await authApi("/api/data");
-      const currentData = normaliseData(remote.data);
-      const response = await fetch("/rental-income-template.xlsx");
-      if (!response.ok) throw new Error("Template download failed");
+      // Start with the current application state so an API/network hiccup does
+      // not block the user's export. Prefer the authenticated server snapshot
+      // when it is available, but fall back to the data already shown in MaliDesk.
+      let currentData = normaliseData(data);
+      try {
+        const remote = await authApi("/api/data");
+        if (remote && remote.data && typeof remote.data === "object") {
+          currentData = normaliseData(remote.data);
+        }
+      } catch (apiError) {
+        console.warn("MaliDesk export: using current in-app data because the server snapshot could not be fetched.", apiError);
+      }
+
+      // BASE_URL keeps the template URL correct for root and sub-path deployments.
+      const templateUrl = `${import.meta.env.BASE_URL || "/"}rental-income-template.xlsx`;
+      const response = await fetch(templateUrl);
+      if (!response.ok) throw new Error(`Template download failed (${response.status}) at ${templateUrl}`);
 
       // ExcelJS writes cell styles, formulas, row/column sizing and supported
       // workbook features. The SheetJS community writer used previously did
@@ -1360,7 +1372,8 @@ function MaliDeskCore({ auth }) {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      // Let the browser begin reading the generated file before releasing its URL.
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       showToast("Current rental data exported using the Excel template");
     } catch (e) {
       console.error("MaliDesk Excel export failed:", e);
